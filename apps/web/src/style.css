@@ -1,0 +1,49 @@
+@import 'tailwindcss';
+
+/*
+ * Design tokens, tuned to the HighLevel shell the dashboard is iframed into:
+ * white cards on a cool grey canvas, hairline borders, GHL's blue as the one
+ * accent. Chart colors keep the validated dataviz contrast ratios (single
+ * series + reserved status colors) so meaning never rides on hue alone.
+ *
+ * Light only, deliberately — GHL has no dark theme, and a dark iframe inside
+ * a white parent reads as a broken embed rather than a preference.
+ */
+@theme {
+  --color-surface: #ffffff;
+  --color-plane: #f3f4f7;
+  --color-ink: #16181d;
+  --color-ink-2: #5a6270;
+  --color-ink-3: #8b93a1;
+  --color-hairline: #e2e5ea;
+  --color-baseline: #c6cbd4;
+
+  --color-series: #188bf6;
+  --color-series-soft: #d6e9fd;
+
+  --color-good: #0ca30c;
+  --color-good-text: #006300;
+  --color-warning: #fab219;
+  --color-serious: #ec835a;
+  --color-critical: #d03b3b;
+
+  --font-sans: system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+/* Keep form controls, scrollbars and focus rings light even when the OS is dark. */
+:root {
+  color-scheme: light;
+}
+
+body {
+  background: var(--color-plane);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}

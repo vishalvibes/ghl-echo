@@ -1,80 +1,84 @@
-# template
+# Voice AI Observability Copilot
 
-FastAPI + Next.js + Supabase starter (monorepo).
+An **Agent Observability Copilot** for HighLevel Voice AI agents. It automates
+the *Monitor* and *Analyze* phases: ingest call transcripts, judge every call
+against a per-agent scorecard with an LLM, and turn the failures into ranked,
+evidence-linked prompt fixes.
+
+```
+GHL call ends ──webhook──▶ API ──queue──▶ LLM judge ──▶ scores / findings / actions
+                                                              │
+        HighLevel iframe ◀── Vue dashboard ◀── aggregations ──┘
+```
 
 | Part | Stack | Dir |
 |------|-------|-----|
-| Backend | FastAPI, [uv](https://docs.astral.sh/uv/), Python 3.12 | `backend/` |
-| Frontend | Next.js (App Router), Tailwind v4, shadcn/ui, React Query | `frontend/` |
-| Database | Supabase (local Postgres via the Supabase CLI) | `supabase/` |
+| API + workers | Node 22, Fastify 5, Drizzle, Inngest, zod | `apps/api/` |
+| Dashboard | Vue 3, Vite, Tailwind v4, TanStack Query | `apps/web/` |
+| Shared contracts | zod schemas (scorecards, judge output, API) | `packages/shared/` |
+| Database | Postgres via the local Supabase CLI stack | `supabase/` |
 
 ## Prerequisites
 
-- [Docker](https://www.docker.com/) **running** (required for the local Supabase stack)
-- `uv`, `pnpm`, and the `supabase` CLI on your PATH
+- [Docker](https://www.docker.com/) **running** (local Postgres)
+- Node 22+, `pnpm`, and the `supabase` CLI on your PATH
+- tmux (for `make dev`; auto-installed via brew if missing)
 
 ## Quick start
 
 ```bash
-# 1. Install dependencies
-make install                 # uv sync (backend) + pnpm install (frontend)
-
-# 2. Start the database  (Docker must be running)
-make up                      # == supabase start
-make status                  # copy the anon + service_role keys it prints
-
-# 3. Configure env
-cp backend/.env.example backend/.env         # paste SUPABASE_ANON_KEY + SERVICE_ROLE_KEY
-cp frontend/.env.example frontend/.env.local
-
-# 4. Run (two terminals)
-make backend                 # FastAPI  -> http://localhost:8000  (docs at /docs)
-make frontend                # Next.js  -> http://localhost:3000
+make install        # pnpm install
+cp apps/api/.env.example apps/api/.env    # defaults work for fixture mode
+make dev            # Supabase + API + dashboard + Inngest in one tmux session
 ```
 
-Or, in one shot: `make dev` (Supabase + backend + frontend + Inngest in one tmux
-session).
+`make dev` seeds a **demo location** — three reference agents with handcrafted
+calls and evaluations — so the full dashboard works with **no HighLevel account
+and no OpenAI key**. Open http://localhost:5173 and sign in with:
 
-## What's in the template
+- email: `demo@copilot.dev`
+- password: `copilot123`
 
-`/` is the auth gate — Supabase email + password (Google OAuth optional). Sign in
-with the seeded user (`e2e-test@example.com` / `testpass123`) and you land in the
-app shell, which has one route per reference surface:
+(Configurable via `DEMO_LOGIN_EMAIL` / `DEMO_LOGIN_PASSWORD` in `apps/api/.env`.
+Inside the HighLevel iframe the login screen is skipped — the GHL context
+exchange signs the user in automatically.)
 
-| Route | Shows | Backend |
-|-------|-------|---------|
-| `/chat` | Streaming multi-turn chat (SSE, token-by-token) | `POST /chat/stream` |
-| `/inference` | One-shot prompt → completion | `POST /inference` |
-| `/todos` | CRUD via React Query, scoped to the signed-in user | `/todos` |
-| `/health` | Health matrix: frontend + API + Supabase + LLM + Inngest | `GET /health/matrix` |
-
-Chat and inference need OpenAI configured (`OPENAI_ENABLED=true` + `OPENAI_API_KEY`
-in `backend/.env`); without it they return 503 and the health matrix shows the
-`llm` row as `disabled`. Everything else works out of the box. Set
-`OPENAI_BASE_URL` to use any OpenAI-compatible gateway instead.
-
-Default model is `gpt-5.6-terra`, the balanced tier of the GPT-5.6 family — swap
-`OPENAI_MODEL` for `gpt-5.6-luna` (cheapest/fastest) or `gpt-5.6-sol` (flagship).
-
-## Common commands
-
-| Command | What |
-|---------|------|
-| `make up` / `make down` | Start / stop local Supabase |
-| `make status` | Print local Supabase URLs + keys |
-| `make reset` | Re-run migrations + reseed the DB |
-| `make backend` | Run FastAPI (`:8000`) |
-| `make frontend` | Run Next.js (`:3000`) |
-
-> Note: `supabase up` is not a real CLI command — the Supabase CLI uses
-> `supabase start`. `make up` is provided as the `up` alias you wanted.
-
-## Database changes
+To evaluate calls with the real judge, set in `apps/api/.env`:
 
 ```bash
-supabase migration new <name>   # create a timestamped migration in supabase/migrations/
-# edit the generated .sql, then:
-make reset                      # apply migrations + seed to the local DB
+OPENAI_ENABLED=true
+OPENAI_API_KEY=sk-...
 ```
 
-See `CLAUDE.md` for backend/frontend/database conventions.
+## What's functional vs mocked
+
+| Piece | Status |
+|---|---|
+| Transcript normalization, judging, scoring, storage | functional |
+| Dashboard (overview, agent detail, calls, call evidence, actions, scorecards) | functional |
+| LLM judge + recommendations + criteria generation | functional (needs OpenAI key) |
+| GHL OAuth install flow, webhook ingest, backfill | implemented, needs marketplace app credentials |
+| Demo call data | mocked (seeded fixtures, flagged `is_mock`) |
+| Prompt patch write-back to GHL | mocked (copy-to-clipboard by design) |
+
+## Commands
+
+| Command | What |
+|---|---|
+| `make dev` / `make stop` | full stack up/down (tmux) |
+| `make reset` | re-run migrations + reseed demo data |
+| `make seed` | reseed demo data only (idempotent) |
+| `make check` | typecheck + unit tests, all packages |
+| `make migrate` | generate a migration from `apps/api/src/db/schema.ts` |
+
+## HighLevel installation
+
+1. Create a marketplace app (sub-account distribution) with scopes
+   `conversations.readonly`, `locations.readonly`, and the Voice AI read scopes.
+2. Set the OAuth redirect to `<your-host>/auth/oauth/callback` and put the client
+   id/secret in `apps/api/.env`.
+3. Add a **Custom Page / Custom Menu Link** pointing at the deployed `apps/web`
+   origin — the dashboard exchanges the iframe context for a session and scopes
+   every read to that location.
+4. Point the app's call-completed webhook at `<your-host>/webhooks/ghl`.
+   Install triggers an automatic backfill of historical call logs.

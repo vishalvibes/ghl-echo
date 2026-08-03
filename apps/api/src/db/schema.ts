@@ -1,0 +1,342 @@
+import { relations, sql } from 'drizzle-orm'
+import {
+  boolean,
+  index,
+  integer,
+  jsonb,
+  pgEnum,
+  pgTable,
+  real,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+  varchar,
+} from 'drizzle-orm/pg-core'
+import type { Criterion, Turn } from '@copilot/shared'
+
+/**
+ * Every row in this schema is scoped to a HighLevel location (sub-account).
+ * `locationId` is the tenant key and is present on every queryable table so a
+ * missing join can never leak one customer's calls into another's dashboard.
+ */
+
+export const verdictEnum = pgEnum('verdict', ['pass', 'partial', 'fail'])
+export const severityEnum = pgEnum('severity', ['low', 'medium', 'high'])
+export const actionStatusEnum = pgEnum('action_status', ['open', 'done', 'dismissed'])
+export const callDirectionEnum = pgEnum('call_direction', ['inbound', 'outbound'])
+export const callOutcomeEnum = pgEnum('call_outcome', [
+  'completed',
+  'no_answer',
+  'voicemail',
+  'busy',
+  'failed',
+])
+export const ingestStatusEnum = pgEnum('ingest_status', [
+  'pending',
+  'evaluated',
+  'skipped',
+  'failed',
+])
+
+// --- Tenancy ----------------------------------------------------------------
+
+/** One installed copy of the app, plus its OAuth tokens. */
+export const locations = pgTable('locations', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  ghlLocationId: varchar('ghl_location_id', { length: 64 }).notNull().unique(),
+  ghlCompanyId: varchar('ghl_company_id', { length: 64 }),
+  name: text('name').notNull().default('Unnamed location'),
+  /** Encrypted at rest by `ghl/tokens.ts` — never written in plaintext. */
+  accessToken: text('access_token'),
+  refreshToken: text('refresh_token'),
+  tokenExpiresAt: timestamp('token_expires_at', { withTimezone: true }),
+  scopes: text('scopes'),
+  installedAt: timestamp('installed_at', { withTimezone: true }).notNull().defaultNow(),
+  uninstalledAt: timestamp('uninstalled_at', { withTimezone: true }),
+})
+
+// --- Agents & scorecards ----------------------------------------------------
+
+export const agents = pgTable(
+  'agents',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    locationId: uuid('location_id')
+      .notNull()
+      .references(() => locations.id, { onDelete: 'cascade' }),
+    ghlAgentId: varchar('ghl_agent_id', { length: 64 }).notNull(),
+    name: text('name').notNull(),
+    /**
+     * Copy of the agent's system prompt at last sync. The recommendation
+     * engine diffs against this, so it must be the text the calls actually
+     * ran under — not whatever the prompt says today.
+     */
+    promptSnapshot: text('prompt_snapshot'),
+    promptSyncedAt: timestamp('prompt_synced_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('agents_location_ghl_agent_idx').on(t.locationId, t.ghlAgentId)],
+)
+
+/**
+ * Versioned, append-only. Editing criteria inserts a new version rather than
+ * mutating the old one, so historical evaluations stay interpretable.
+ */
+export const scorecards = pgTable(
+  'scorecards',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    locationId: uuid('location_id')
+      .notNull()
+      .references(() => locations.id, { onDelete: 'cascade' }),
+    agentId: uuid('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    version: integer('version').notNull(),
+    passThreshold: integer('pass_threshold').notNull().default(70),
+    partialThreshold: integer('partial_threshold').notNull().default(40),
+    criteria: jsonb('criteria').$type<Criterion[]>().notNull(),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('scorecards_agent_version_idx').on(t.agentId, t.version),
+    index('scorecards_active_idx').on(t.agentId, t.isActive),
+  ],
+)
+
+// --- Calls ------------------------------------------------------------------
+
+export const calls = pgTable(
+  'calls',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    locationId: uuid('location_id')
+      .notNull()
+      .references(() => locations.id, { onDelete: 'cascade' }),
+    agentId: uuid('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    /** Dedupe key — webhooks are at-least-once, so ingest must be idempotent. */
+    ghlCallId: varchar('ghl_call_id', { length: 128 }).notNull(),
+    ghlContactId: varchar('ghl_contact_id', { length: 64 }),
+    contactName: text('contact_name'),
+    contactPhone: varchar('contact_phone', { length: 32 }),
+    direction: callDirectionEnum('direction').notNull(),
+    outcome: callOutcomeEnum('outcome').notNull().default('completed'),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
+    durationSec: integer('duration_sec').notNull().default(0),
+    recordingUrl: text('recording_url'),
+    transcript: jsonb('transcript').$type<Turn[]>().notNull(),
+    ingestStatus: ingestStatusEnum('ingest_status').notNull().default('pending'),
+    ingestError: text('ingest_error'),
+    /** True for synthetic calls loaded from fixtures. Surfaced in the UI. */
+    isMock: boolean('is_mock').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('calls_location_ghl_call_idx').on(t.locationId, t.ghlCallId),
+    index('calls_agent_started_idx').on(t.agentId, t.startedAt.desc()),
+    index('calls_location_started_idx').on(t.locationId, t.startedAt.desc()),
+  ],
+)
+
+// --- Evaluations ------------------------------------------------------------
+
+export const evaluations = pgTable(
+  'evaluations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    locationId: uuid('location_id')
+      .notNull()
+      .references(() => locations.id, { onDelete: 'cascade' }),
+    callId: uuid('call_id')
+      .notNull()
+      .references(() => calls.id, { onDelete: 'cascade' }),
+    agentId: uuid('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    scorecardId: uuid('scorecard_id')
+      .notNull()
+      .references(() => scorecards.id),
+    scorecardVersion: integer('scorecard_version').notNull(),
+    /** Weighted 0..100, computed in `scoreCall`, never taken from the model. */
+    overallScore: integer('overall_score').notNull(),
+    verdict: verdictEnum('verdict').notNull(),
+    summary: text('summary').notNull(),
+    callerSentiment: varchar('caller_sentiment', { length: 16 }).notNull(),
+    model: varchar('model', { length: 64 }).notNull(),
+    latencyMs: integer('latency_ms').notNull().default(0),
+    promptTokens: integer('prompt_tokens').notNull().default(0),
+    completionTokens: integer('completion_tokens').notNull().default(0),
+    /** Criteria the judge failed to return — a model-quality signal. */
+    missingKeys: jsonb('missing_keys').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // One live evaluation per call per scorecard version; re-scoring under a
+    // new version adds a row instead of destroying the old judgement.
+    uniqueIndex('evaluations_call_version_idx').on(t.callId, t.scorecardVersion),
+    index('evaluations_agent_created_idx').on(t.agentId, t.createdAt.desc()),
+  ],
+)
+
+export const criterionResults = pgTable(
+  'criterion_results',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    evaluationId: uuid('evaluation_id')
+      .notNull()
+      .references(() => evaluations.id, { onDelete: 'cascade' }),
+    agentId: uuid('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    criterionKey: varchar('criterion_key', { length: 64 }).notNull(),
+    met: boolean('met').notNull(),
+    value: text('value'),
+    confidence: real('confidence').notNull().default(0),
+    evidenceTurnIds: jsonb('evidence_turn_ids')
+      .$type<number[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    rationale: text('rationale').notNull().default(''),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('criterion_results_eval_key_idx').on(t.evaluationId, t.criterionKey),
+    // Powers the per-criterion pass-rate breakdown without touching evaluations.
+    index('criterion_results_agent_key_idx').on(t.agentId, t.criterionKey, t.createdAt.desc()),
+  ],
+)
+
+export const findings = pgTable(
+  'findings',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    locationId: uuid('location_id')
+      .notNull()
+      .references(() => locations.id, { onDelete: 'cascade' }),
+    evaluationId: uuid('evaluation_id')
+      .notNull()
+      .references(() => evaluations.id, { onDelete: 'cascade' }),
+    callId: uuid('call_id')
+      .notNull()
+      .references(() => calls.id, { onDelete: 'cascade' }),
+    agentId: uuid('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    type: varchar('type', { length: 48 }).notNull(),
+    severity: severityEnum('severity').notNull(),
+    title: text('title').notNull(),
+    detail: text('detail').notNull(),
+    quote: text('quote'),
+    turnIds: jsonb('turn_ids').$type<number[]>().notNull().default(sql`'[]'::jsonb`),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('findings_agent_type_idx').on(t.agentId, t.type, t.createdAt.desc())],
+)
+
+/** "Use Actions": spans of a call that need a human. The daily work queue. */
+export const segments = pgTable(
+  'segments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    locationId: uuid('location_id')
+      .notNull()
+      .references(() => locations.id, { onDelete: 'cascade' }),
+    evaluationId: uuid('evaluation_id')
+      .notNull()
+      .references(() => evaluations.id, { onDelete: 'cascade' }),
+    callId: uuid('call_id')
+      .notNull()
+      .references(() => calls.id, { onDelete: 'cascade' }),
+    agentId: uuid('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    turnStart: integer('turn_start').notNull(),
+    turnEnd: integer('turn_end').notNull(),
+    actionType: varchar('action_type', { length: 48 }).notNull(),
+    reason: text('reason').notNull(),
+    severity: severityEnum('severity').notNull().default('medium'),
+    status: actionStatusEnum('status').notNull().default('open'),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('segments_location_status_idx').on(t.locationId, t.status, t.createdAt.desc())],
+)
+
+// --- Recommendations --------------------------------------------------------
+
+/** Cached LLM output. Regenerated when the window or evidence set changes. */
+export const recommendations = pgTable(
+  'recommendations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    locationId: uuid('location_id')
+      .notNull()
+      .references(() => locations.id, { onDelete: 'cascade' }),
+    agentId: uuid('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    window: varchar('window', { length: 8 }).notNull(),
+    /** Hash of the evidence call ids — a changed set invalidates the cache. */
+    evidenceHash: varchar('evidence_hash', { length: 64 }).notNull(),
+    basedOnCalls: integer('based_on_calls').notNull(),
+    items: jsonb('items').$type<unknown[]>().notNull(),
+    model: varchar('model', { length: 64 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('recommendations_agent_window_hash_idx').on(t.agentId, t.window, t.evidenceHash)],
+)
+
+// --- Relations --------------------------------------------------------------
+
+export const locationsRelations = relations(locations, ({ many }) => ({
+  agents: many(agents),
+  calls: many(calls),
+}))
+
+export const agentsRelations = relations(agents, ({ one, many }) => ({
+  location: one(locations, { fields: [agents.locationId], references: [locations.id] }),
+  scorecards: many(scorecards),
+  calls: many(calls),
+}))
+
+export const callsRelations = relations(calls, ({ one, many }) => ({
+  agent: one(agents, { fields: [calls.agentId], references: [agents.id] }),
+  evaluations: many(evaluations),
+}))
+
+export const evaluationsRelations = relations(evaluations, ({ one, many }) => ({
+  call: one(calls, { fields: [evaluations.callId], references: [calls.id] }),
+  agent: one(agents, { fields: [evaluations.agentId], references: [agents.id] }),
+  criterionResults: many(criterionResults),
+  findings: many(findings),
+  segments: many(segments),
+}))
+
+export const criterionResultsRelations = relations(criterionResults, ({ one }) => ({
+  evaluation: one(evaluations, {
+    fields: [criterionResults.evaluationId],
+    references: [evaluations.id],
+  }),
+}))
+
+export const findingsRelations = relations(findings, ({ one }) => ({
+  evaluation: one(evaluations, { fields: [findings.evaluationId], references: [evaluations.id] }),
+  call: one(calls, { fields: [findings.callId], references: [calls.id] }),
+}))
+
+export const segmentsRelations = relations(segments, ({ one }) => ({
+  evaluation: one(evaluations, { fields: [segments.evaluationId], references: [evaluations.id] }),
+  call: one(calls, { fields: [segments.callId], references: [calls.id] }),
+}))
+
+export type SegmentRow = typeof segments.$inferSelect
+export type SegmentInsert = typeof segments.$inferInsert
+export type CallRow = typeof calls.$inferSelect
+export type AgentRow = typeof agents.$inferSelect
+export type ScorecardRow = typeof scorecards.$inferSelect
+export type LocationRow = typeof locations.$inferSelect
+export type EvaluationRow = typeof evaluations.$inferSelect

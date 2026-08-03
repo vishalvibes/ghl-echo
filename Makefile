@@ -1,11 +1,11 @@
 .DEFAULT_GOAL := help
-.PHONY: help dev stop ps urls up down reset status install backend frontend inngest test test-fe test-be e2e e2e-install check-fe
+.PHONY: help dev stop ps urls up down reset status install api web inngest seed test test-api test-web test-shared check migrate
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
 
-# --- Full stack (one command: Supabase + backend + frontend + Inngest in tmux) ---
+# --- Full stack (one command: Supabase + API + web + Inngest in tmux) ---
 dev: ## ⭐ Spin up the ENTIRE stack in one attachable tmux session
 	./scripts/dev.sh dev
 
@@ -18,47 +18,51 @@ ps: ## Show status of all dev services
 urls: ## Print all local service URLs
 	./scripts/dev.sh urls
 
-# --- Supabase (requires Docker running) ---
+# --- Supabase / Postgres (requires Docker running) ---
 up: ## Start the local Supabase stack  (alias for `supabase start`)
 	supabase start
 
 down: ## Stop the local Supabase stack
 	supabase stop
 
-reset: ## Reset the local DB: re-run migrations + seed
+reset: ## Reset the local DB: re-run migrations + reseed demo data
 	supabase db reset
+	pnpm --filter @copilot/api seed
 
 status: ## Show local Supabase URLs and keys
 	supabase status
 
+migrate: ## Generate a new migration from apps/api/src/db/schema.ts changes
+	pnpm --filter @copilot/api db:generate
+
+seed: ## Seed demo agents, calls and evaluations (idempotent)
+	pnpm --filter @copilot/api seed
+
 # --- App ---
-install: ## Install backend + frontend deps
-	cd backend && uv sync
-	cd frontend && pnpm install
+install: ## Install all workspace deps
+	pnpm install
 
-backend: ## Run the FastAPI backend on :8000
-	cd backend && uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+api: ## Run the Fastify API on :8000
+	pnpm --filter @copilot/api dev
 
-frontend: ## Run the Next.js frontend on :3000
-	cd frontend && pnpm dev
+web: ## Run the Vue dashboard on :5173
+	pnpm --filter @copilot/web dev
 
 inngest: ## Run the Inngest Dev Server on :8288 (also serves the MCP endpoint)
 	npx inngest-cli@latest dev -l warn -u http://localhost:8000/api/inngest
 
-# --- Tests ---
-test: test-be test-fe ## Run backend + frontend unit tests
+# --- Tests / checks ---
+test: ## Run all workspace unit tests
+	pnpm -r test
 
-test-fe: ## Run frontend unit tests (Vitest, one-shot)
-	cd frontend && pnpm test:run
+test-api: ## API tests only
+	pnpm --filter @copilot/api test
 
-test-be: ## Run backend tests (ruff + pytest)
-	cd backend && uv run ruff check . && uv run pytest
+test-web: ## Web tests only
+	pnpm --filter @copilot/web test
 
-check-fe: ## Typecheck + lint + unit test the frontend
-	cd frontend && pnpm exec tsc --noEmit && pnpm lint && pnpm test:run
+test-shared: ## Shared package tests only
+	pnpm --filter @copilot/shared test
 
-e2e-install: ## Install the Playwright browser (chromium) — run once
-	cd frontend && pnpm e2e:install
-
-e2e: ## Run Playwright E2E (needs the stack up via `make dev` + E2E_EMAIL/E2E_PASSWORD)
-	cd frontend && pnpm e2e
+check: ## Typecheck + test everything
+	pnpm -r typecheck && pnpm -r test

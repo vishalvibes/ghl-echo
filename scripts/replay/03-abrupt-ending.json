@@ -1,0 +1,20 @@
+{
+  "locationId": "demo-location",
+  "id": "replay-003-abrupt-ending",
+  "agentId": "mock-agent-inbound-reception",
+  "direction": "inbound",
+  "status": "completed",
+  "startedAt": "2026-08-02T17:41:00.000Z",
+  "duration": 41,
+  "contactName": "Priya Raman",
+  "phone": "+14155550117",
+  "transcript": [
+    { "role": "agent", "text": "Northside Dental, this is Ava. How can I help?", "startTime": 0 },
+    { "role": "caller", "text": "Hi, I need to get in for a filling that came loose.", "startTime": 4 },
+    { "role": "agent", "text": "Let me check the calendar for you. One moment.", "startTime": 9 },
+    { "role": "caller", "text": "Sure.", "startTime": 12 },
+    { "role": "agent", "text": "Okay, so for a filling we'd want to get you in with — sorry, could you repeat which tooth it was?", "startTime": 20 },
+    { "role": "caller", "text": "Upper right, near the back. Hello? Are you still there?", "startTime": 27 },
+    { "role": "caller", "text": "Hello?", "startTime": 35 }
+  ]
+}

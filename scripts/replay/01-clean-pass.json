@@ -1,0 +1,24 @@
+{
+  "locationId": "demo-location",
+  "id": "replay-001-clean-pass",
+  "agentId": "mock-agent-inbound-reception",
+  "direction": "inbound",
+  "status": "completed",
+  "startedAt": "2026-08-02T15:04:00.000Z",
+  "duration": 138,
+  "contactName": "Dana Whitfield",
+  "phone": "+14155550188",
+  "transcript": [
+    { "role": "agent", "text": "Northside Dental, this is Ava. How can I help you today?", "startTime": 0 },
+    { "role": "caller", "text": "Hi, I'd like to book a cleaning.", "startTime": 4 },
+    { "role": "agent", "text": "Happy to sort that out. Any discomfort or pain right now, or is this a routine cleaning?", "startTime": 8 },
+    { "role": "caller", "text": "No pain, just routine. It's been about eight months.", "startTime": 13 },
+    { "role": "agent", "text": "Perfect. I have Thursday the sixth at 10:15 in the morning, or Friday the seventh at 3:30 in the afternoon. Which suits you better?", "startTime": 18 },
+    { "role": "caller", "text": "Thursday morning works.", "startTime": 27 },
+    { "role": "agent", "text": "Thursday the sixth at 10:15 it is. Can I take the best number to reach you on?", "startTime": 31 },
+    { "role": "caller", "text": "Four one five, five five five, oh one eight eight.", "startTime": 37 },
+    { "role": "agent", "text": "Got it, 415-555-0188. I've booked you in with Dr. Lang. You'll get a text confirmation within the hour, and we'll send a reminder the day before. Anything else I can help with?", "startTime": 44 },
+    { "role": "caller", "text": "No, that's everything. Thanks.", "startTime": 56 },
+    { "role": "agent", "text": "Thanks for calling Northside Dental. See you Thursday.", "startTime": 59 }
+  ]
+}

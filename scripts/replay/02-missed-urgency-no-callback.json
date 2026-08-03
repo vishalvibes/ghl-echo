@@ -1,0 +1,22 @@
+{
+  "locationId": "demo-location",
+  "id": "replay-002-missed-urgency-no-callback",
+  "agentId": "mock-agent-inbound-reception",
+  "direction": "inbound",
+  "status": "completed",
+  "startedAt": "2026-08-02T16:22:00.000Z",
+  "duration": 96,
+  "contactName": "Marcus Ellery",
+  "phone": "+14155550142",
+  "transcript": [
+    { "role": "agent", "text": "Northside Dental, Ava speaking.", "startTime": 0 },
+    { "role": "caller", "text": "Hi — I've had a really bad toothache since last night, the left side. It's keeping me up.", "startTime": 3 },
+    { "role": "agent", "text": "Sorry to hear that. Let me find you an appointment. The next opening I have is Tuesday the eleventh at 2pm.", "startTime": 11 },
+    { "role": "caller", "text": "Tuesday? That's five days away. Is there nothing sooner?", "startTime": 19 },
+    { "role": "agent", "text": "Tuesday the eleventh at 2pm is what's showing in the calendar. Shall I book that in?", "startTime": 24 },
+    { "role": "caller", "text": "I guess I'll take it. Should I be doing anything for the pain?", "startTime": 31 },
+    { "role": "agent", "text": "I can't advise on that. You're booked for Tuesday the eleventh at 2pm with Dr. Lang. We'll see you then.", "startTime": 36 },
+    { "role": "caller", "text": "Okay. Bye.", "startTime": 44 },
+    { "role": "agent", "text": "Thanks for calling Northside Dental.", "startTime": 46 }
+  ]
+}

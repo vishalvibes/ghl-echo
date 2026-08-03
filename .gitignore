@@ -5,20 +5,15 @@
 */.env
 */.env.*
 !*/.env.example
+apps/*/.env
+apps/*/.env.*
+!apps/*/.env.example
 
-# --- Python / backend ---
-.venv/
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.ruff_cache/
-.mypy_cache/
-
-# --- Node / frontend ---
+# --- Node ---
 node_modules/
-.next/
-out/
+dist/
 .pnpm-store/
+*.tsbuildinfo
 
 # --- Supabase ---
 supabase/.branches/

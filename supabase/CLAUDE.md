@@ -1,20 +1,22 @@
 # supabase/CLAUDE.md
 
-Database/Supabase-specific guidance. Root `../CLAUDE.md` (repo layout, commands, env/secrets, refactoring rules) still applies.
+Database guidance. Root `../CLAUDE.md` (repo layout, commands, env/secrets, refactoring rules) still applies.
 
 Generic database rules (lifecycle soft-delete, single state column, labels-vs-`tags` array, no bi-directional refs, junction tables for M×N, query batching to dodge `414`, back-port edit-migrations into the original migration): see `../specs/database.md`.
 
-Local Postgres stack (config, migrations, seed) driven by the Supabase CLI.
+Local **plain Postgres** stack driven by the Supabase CLI. Supabase Auth, RLS,
+and Storage are **unused** — the API is the only client (via `DATABASE_URL`)
+and owns all access control through the iframe session.
 
 ## Commands
 
-- `make up` / `make down` (from repo root) — start/stop local Supabase (**needs Docker running**). `make up` == `supabase start`.
-- `make status` — print local Supabase URLs + keys.
-- `make reset` — re-run migrations + seed.
+- `make up` / `make down` (repo root) — start/stop local Supabase (**needs Docker running**).
+- `make status` — print local URLs.
+- `make reset` — re-run migrations + reseed demo data (`pnpm --filter @copilot/api seed`).
+- `make migrate` — **the only way to create migrations**: drizzle-kit diffs `apps/api/src/db/schema.ts` and writes a timestamped SQL file here (plus `migrations/meta/` journal — commit both).
 
 ## Conventions
 
-- Migrations are timestamped SQL in `supabase/migrations/` (create via `supabase migration new <name>`). If you change an existing table, also back-port the change into that table's original migration.
-- Tables enable RLS. The backend uses the secret key (full access, bypasses RLS); add policies before exposing a table to the browser directly.
-- Prefer a single state/lifecycle column over many booleans; keep `created_at`/`updated_at`.
-- Google OAuth: `[auth.external.google]` in `config.toml` reads `SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID`/`_SECRET` from the env — put them in `supabase/.env` (gitignored) and load before `make up`. `skip_nonce_check = true` is required for local Google sign-in.
+- Schema source of truth is TypeScript (`apps/api/src/db/schema.ts`). Do not hand-write or hand-edit SQL in `supabase/migrations/` — change the TS schema and regenerate.
+- `seed.sql` is intentionally a no-op; demo data seeding lives in `apps/api/src/db/seed.ts` because it runs the real scoring pipeline.
+- Every tenant-queryable table has `location_id` (GHL sub-account). Scorecards are append-only versions; `evaluations` are unique per `(call_id, scorecard_version)`.
