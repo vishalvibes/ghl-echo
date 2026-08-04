@@ -16,6 +16,11 @@ const route = useRoute()
 const callId = computed(() => String(route.params.id))
 const { data: call, isLoading } = useCall(callId)
 const updateAction = useUpdateAction()
+const callsBackTarget = computed(() =>
+  route.query.from === 'flagged'
+    ? { path: '/calls', query: { flagged: 'true' } }
+    : { path: '/calls' },
+)
 
 /** Turn ids to highlight, driven by hovering/clicking evidence in the panel. */
 const highlighted = ref<Set<number>>(new Set())
@@ -28,8 +33,8 @@ function focusTurns(turnIds: number[]) {
   }
 }
 
-/** Segment ranges → per-turn action flag for the transcript gutter. */
-const actionTurns = computed(() => {
+/** Open review ranges mapped to the transcript turns they flag. */
+const reviewFlagTurns = computed(() => {
   const map = new Map<number, string>()
   for (const segment of call.value?.evaluation?.segments ?? []) {
     if (segment.status !== 'open') continue
@@ -131,7 +136,7 @@ function shortInsight(insight: string) {
       <div>
         <div class="min-w-0 space-y-2">
           <RouterLink
-            to="/calls"
+            :to="callsBackTarget"
             class="inline-flex items-center gap-1.5 rounded-md border border-hairline bg-surface px-2.5 py-1.5 text-sm text-ink-2 hover:bg-plane hover:text-ink"
           >
             <ArrowLeft class="size-4" aria-hidden="true" />
@@ -230,7 +235,7 @@ function shortInsight(insight: string) {
                         ? 'rounded-bl-sm bg-plane text-ink'
                         : 'bg-transparent text-ink-3 italic',
                     highlighted.has(turn.id) ? 'ring-2 ring-series ring-offset-2 ring-offset-surface' : '',
-                    actionTurns.has(turn.id) ? 'ring-2 ring-warning ring-offset-2 ring-offset-surface' : '',
+                    reviewFlagTurns.has(turn.id) ? 'ring-2 ring-warning ring-offset-2 ring-offset-surface' : '',
                   ]"
                 >
                   {{ turn.text }}
@@ -245,11 +250,11 @@ function shortInsight(insight: string) {
                 </div>
 
                 <div
-                  v-if="actionTurns.has(turn.id)"
+                  v-if="reviewFlagTurns.has(turn.id)"
                   class="mt-0.5 flex items-center gap-1 px-1 text-sm font-medium text-ink-2"
                 >
                   <AlertTriangle class="size-3.5 text-warning" aria-hidden="true" />
-                  {{ actionTurns.get(turn.id) }}
+                  {{ reviewFlagTurns.get(turn.id) }}
                 </div>
 
                 <!--
@@ -329,7 +334,7 @@ function shortInsight(insight: string) {
             </ul>
           </Card>
 
-          <Card v-if="call.evaluation && call.evaluation.segments.length" title="Use actions">
+          <Card v-if="call.evaluation && call.evaluation.segments.length" title="Flagged for review">
             <ul class="space-y-2.5">
               <li v-for="segment in call.evaluation.segments" :key="segment.id" class="text-sm">
                 <div class="flex items-start justify-between gap-2">
@@ -344,9 +349,22 @@ function shortInsight(insight: string) {
                       class="rounded-md border border-hairline px-2 py-0.5 text-sm hover:bg-plane"
                       @click="updateAction.mutate({ id: segment.id, status: 'done' })"
                     >
-                      Done
+                      Resolve
                     </button>
-                    <span v-else class="text-sm text-ink-3">{{ segment.status }}</span>
+                    <button
+                      v-if="segment.status === 'open'"
+                      class="rounded-md border border-hairline px-2 py-0.5 text-sm text-ink-3 hover:bg-plane"
+                      @click="updateAction.mutate({ id: segment.id, status: 'dismissed' })"
+                    >
+                      Dismiss
+                    </button>
+                    <button
+                      v-else
+                      class="rounded-md border border-hairline px-2 py-0.5 text-sm text-ink-3 hover:bg-plane"
+                      @click="updateAction.mutate({ id: segment.id, status: 'open' })"
+                    >
+                      Reopen
+                    </button>
                   </div>
                 </div>
               </li>

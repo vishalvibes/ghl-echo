@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm'
 import { db } from '../db/client.js'
 import { agents, scorecards, type LocationRow } from '../db/schema.js'
-import { fetchVoiceAgents } from '../ghl/client.js'
+import { fetchVoiceAgents } from '../clients/highlevel.js'
 
 /**
  * Mirror the location's Voice AI agents into our `agents` table and snapshot

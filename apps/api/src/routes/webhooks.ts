@@ -3,9 +3,9 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod'
 import { eq } from 'drizzle-orm'
 import { env } from '../config/env.js'
 import { db } from '../db/client.js'
-import { locations, webhookEvents } from '../db/schema.js'
-import { toCandidate } from '../ingest/ghl-ingest.js'
-import { sendWebhookEvents, VOICE_CALL_EVENT_TYPE } from '../inngest/webhook-inbox.js'
+import { locations } from '../db/schema.js'
+import { toCandidate } from '../calls/import-from-highlevel.js'
+import { sendWebhookEvents, storeWebhookEvent } from '../services/webhook-inbox.js'
 
 /**
  * Inbound webhook from HighLevel, fired when a Voice AI call completes.
@@ -139,23 +139,12 @@ export const webhookRoutes: FastifyPluginAsyncZod = async (app) => {
         }
 
         const authorized = Boolean(location.accessToken && location.refreshToken)
-        const [stored] = await db
-          .insert(webhookEvents)
-          .values({
-            locationId: location.id,
-            providerEventId: candidate.ghlCallId,
-            eventType: VOICE_CALL_EVENT_TYPE,
-            payload,
-            status: authorized ? 'pending' : 'waiting_authorization',
-          })
-          .onConflictDoNothing({
-            target: [
-              webhookEvents.locationId,
-              webhookEvents.eventType,
-              webhookEvents.providerEventId,
-            ],
-          })
-          .returning({ id: webhookEvents.id })
+        const stored = await storeWebhookEvent({
+          locationId: location.id,
+          providerEventId: candidate.ghlCallId,
+          payload,
+          authorized,
+        })
 
         if (!stored) {
           return { ok: true, duplicate: true }

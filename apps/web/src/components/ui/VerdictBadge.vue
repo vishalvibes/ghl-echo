@@ -10,7 +10,7 @@ const styles: Record<Verdict, string> = {
   partial: 'bg-warning/10 text-ink border-warning/40',
   fail: 'bg-critical/10 text-critical border-critical/30',
 }
-const labels: Record<Verdict, string> = { pass: 'Pass', partial: 'Partial', fail: 'Fail' }
+const labels: Record<Verdict, string> = { pass: 'Pass', partial: 'Needs review', fail: 'Fail' }
 </script>
 
 <template>

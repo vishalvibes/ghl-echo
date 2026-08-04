@@ -11,6 +11,8 @@ import EmptyState from '../components/ui/EmptyState.vue'
 import LoadingBlock from '../components/ui/LoadingBlock.vue'
 import AreaChart from '../components/charts/AreaChart.vue'
 import MetricTrendCard from '../components/overview/MetricTrendCard.vue'
+import BarList from '../components/charts/BarList.vue'
+import TrendChart from '../components/charts/TrendChart.vue'
 
 const window = ref<AnalyticsWindow>('7d')
 const agentId = ref('')
@@ -86,18 +88,29 @@ const durationSeries: TrendSeries[] = [{ key: 'avgDurationSec', label: 'Average 
       />
 
       <template v-else>
-        <div class="grid grid-cols-2 gap-3 md:grid-cols-5">
+        <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
           <StatTile label="Calls" :value="String(data.kpis.calls)" />
+          <StatTile label="Evaluated calls" :value="String(data.kpis.evaluatedCalls)" />
+          <template v-if="data.kpis.evaluatedCalls > 0">
+            <StatTile
+              label="Pass rate"
+              :value="pct(data.kpis.passRate)"
+              :delta-pts="Math.round(data.kpis.passRateDelta * 100)"
+            />
+            <StatTile label="Fail rate" :value="pct(data.kpis.failRate)" invert />
+          </template>
+          <StatTile label="Open review flags" :value="String(data.kpis.openActions)" />
           <StatTile label="Avg duration" :value="duration(data.kpis.avgDurationSec)" />
           <StatTile label="Completion" :value="percentOrDash(latestMetrics?.completionRate ?? null)" />
           <StatTile label="Script score" :value="scoreOrDash(latestMetrics?.scriptAdherence ?? null)" />
           <StatTile label="Positive sentiment" :value="percentOrDash(latestMetrics?.positiveSentimentRate ?? null)" />
+          <StatTile label="Average turns" :value="latestMetrics?.avgTurns == null ? '—' : String(latestMetrics.avgTurns)" />
         </div>
 
         <div class="grid gap-4 lg:grid-cols-2">
           <Card title="Call volume" :header-divider="false" :flush="!callVolumePoints.length">
             <AreaChart v-if="callVolumePoints.length" :points="callVolumePoints" aria-label="Call volume over time" />
-            <p v-else class="py-2 text-center text-xs text-ink-3">No data yet</p>
+            <p v-else class="py-2 text-center text-sm text-ink-3">No data yet</p>
           </Card>
 
           <MetricTrendCard
@@ -136,6 +149,18 @@ const durationSeries: TrendSeries[] = [{ key: 'avgDurationSec', label: 'Average 
             format="percent"
           />
         </div>
+
+        <div class="grid gap-4 lg:grid-cols-2">
+          <Card title="Success criteria over time" subtitle="Share of evaluated calls that passed the active scorecard">
+            <TrendChart v-if="data.trend.length" :points="data.trend" />
+            <EmptyState v-else title="No evaluated calls in this window" />
+          </Card>
+          <Card title="Top failure modes" subtitle="Deviations, failures, and missed opportunities in this view">
+            <BarList v-if="data.failureModes.length" :items="data.failureModes" />
+            <EmptyState v-else title="No findings in this window" />
+          </Card>
+        </div>
+
       </template>
     </template>
   </div>

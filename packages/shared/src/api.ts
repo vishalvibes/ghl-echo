@@ -35,6 +35,8 @@ export type IntegrationStatus = z.infer<typeof integrationStatusSchema>
 
 export const kpiSchema = z.object({
   calls: z.number().int(),
+  /** Calls that received a verdict from an explicitly configured scorecard. */
+  evaluatedCalls: z.number().int(),
   passRate: z.number().min(0).max(1),
   failRate: z.number().min(0).max(1),
   openActions: z.number().int(),
@@ -56,6 +58,7 @@ export const callMetricTrendPointSchema = z.object({
   date: z.string(),
   calls: z.number().int(),
   cumulativeCalls: z.number().int(),
+  avgTurns: z.number().nonnegative().nullable(),
   avgDurationSec: z.number().nullable(),
   agentTalkShare: z.number().min(0).max(1).nullable(),
   interruptionRate: z.number().min(0).max(1).nullable(),
@@ -210,8 +213,8 @@ export const callDetailSchema = callListItemSchema.extend({
   metrics: transcriptMetricsSchema.nullable(),
   /**
    * The model's read of the call — outcome, script adherence, comprehension,
-   * tone, missed opportunities. Null when the quality pass has not run (LLM
-   * off, or the transcript was too short to be worth a model call).
+   * tone, missed opportunities. Null when the agent is not configured, the
+   * LLM is off, or the transcript was empty.
    */
   quality: callQualitySchema.nullable(),
   ingestStatus: ingestStatusSchema,

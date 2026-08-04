@@ -10,12 +10,12 @@ import {
   criterionResults,
   evaluations,
   findings as findingsTable,
-  scorecards,
   callActions,
   type AgentRow,
   type CallRow,
   type ScorecardRow,
 } from '../db/schema.js'
+import { activeScorecardFor } from '../services/agent-monitoring.js'
 import { judgeCall } from '../scoring/judge.js'
 import { isJudgeable } from './normalize.js'
 
@@ -62,6 +62,22 @@ export async function persistEvaluation(args: {
     passThreshold: scorecard.passThreshold,
     partialThreshold: scorecard.partialThreshold,
   })
+  const failedEvidence = new Set(
+    output.criteria
+      .filter((criterion) => !criterion.met)
+      .flatMap((criterion) => criterion.evidenceTurnIds),
+  )
+  const groundedFindings = output.findings.filter((finding) =>
+    finding.turnIds.some((turnId) => failedEvidence.has(turnId)),
+  )
+  const groundedSegments = output.segments.filter((segment) =>
+    [...failedEvidence].some((turnId) => turnId >= segment.turnStart && turnId <= segment.turnEnd),
+  )
+  const groundedOutput: JudgeOutput = {
+    ...output,
+    findings: groundedFindings,
+    segments: groundedSegments,
+  }
 
   return db.transaction(async (tx) => {
     const [evaluation] = await tx
@@ -101,9 +117,9 @@ export async function persistEvaluation(args: {
       )
     }
 
-    if (output.findings.length > 0) {
+    if (groundedFindings.length > 0) {
       await tx.insert(findingsTable).values(
-        output.findings.map((f) => ({
+        groundedFindings.map((f) => ({
           locationId: call.locationId,
           evaluationId,
           callId: call.id,
@@ -118,9 +134,9 @@ export async function persistEvaluation(args: {
       )
     }
 
-    if (output.segments.length > 0) {
+    if (groundedSegments.length > 0) {
       await tx.insert(callActions).values(
-        output.segments.map((s) => ({
+        groundedSegments.map((s) => ({
           locationId: call.locationId,
           evaluationId,
           callId: call.id,
@@ -129,7 +145,7 @@ export async function persistEvaluation(args: {
           turnEnd: s.turnEnd,
           actionType: s.actionType,
           reason: s.reason,
-          severity: segmentSeverity(output, s.turnStart, s.turnEnd),
+          severity: segmentSeverity(groundedOutput, s.turnStart, s.turnEnd),
         })),
       )
     }
@@ -140,18 +156,9 @@ export async function persistEvaluation(args: {
   })
 }
 
-export async function activeScorecardFor(agentId: string): Promise<ScorecardRow | null> {
-  const rows = await db.query.scorecards.findMany({
-    where: (sc, { and, eq: eqOp }) => and(eqOp(sc.agentId, agentId), eqOp(sc.isActive, true)),
-    orderBy: (sc, { desc }) => [desc(sc.version)],
-    limit: 1,
-  })
-  return rows[0] ?? null
-}
-
 /**
  * Judge and persist one pending call with the live model. The entry point the
- * Inngest worker calls; also used by the backfill loop.
+ * call event handler calls; also used by the backfill loop.
  */
 export async function evaluateCall(callId: string): Promise<PersistedEvaluation | { skipped: string }> {
   const call = await db.query.calls.findFirst({ where: eq(calls.id, callId) })
@@ -182,6 +189,10 @@ export async function evaluateCall(callId: string): Promise<PersistedEvaluation 
       and(eqOp(e.callId, call.id), eqOp(e.scorecardVersion, scorecard.version)),
   })
   if (existing) {
+    await db
+      .update(calls)
+      .set({ ingestStatus: 'evaluated', ingestError: null })
+      .where(eq(calls.id, call.id))
     return { evaluationId: existing.id, verdict: existing.verdict, overallScore: existing.overallScore }
   }
 

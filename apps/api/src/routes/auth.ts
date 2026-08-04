@@ -3,13 +3,13 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod'
 import { z } from 'zod'
 import { eq } from 'drizzle-orm'
 import { env } from '../config/env.js'
+import { inngestClient } from '../clients/inngest.js'
 import { db } from '../db/client.js'
 import { locations } from '../db/schema.js'
-import { exchangeAuthCode, resolveLocationToken, storeTokens } from '../ghl/client.js'
-import { decryptSsoPayload } from '../ghl/crypto.js'
-import { inngest } from '../inngest/client.js'
-import { replayWaitingWebhookEvents } from '../inngest/webhook-inbox.js'
+import { exchangeAuthCode, resolveLocationToken, storeTokens } from '../clients/highlevel.js'
+import { decryptSsoPayload } from '../lib/highlevel-sso.js'
 import { issueSession, readSession, SESSION_COOKIE } from '../lib/session.js'
+import { replayWaitingWebhookEvents } from '../services/webhook-inbox.js'
 
 function safeEqual(a: string, b: string): boolean {
   const bufA = Buffer.from(a)
@@ -50,7 +50,7 @@ export const authRoutes: FastifyPluginAsyncZod = async (app) => {
       }
 
       try {
-        await inngest.send({ name: 'agent/backfill.requested', data: { locationId: location.id } })
+        await inngestClient.send({ name: 'agent/backfill.requested', data: { locationId: location.id } })
       } catch (error) {
         // Install must not fail because reconciliation could not be queued.
         // Live webhooks remain durable; the failure is visible in logs.

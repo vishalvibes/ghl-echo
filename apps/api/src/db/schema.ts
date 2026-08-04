@@ -200,10 +200,10 @@ export const calls = pgTable(
      * Model-assessed quality: outcome, script adherence, comprehension, tone,
      * information captured, missed opportunities. One LLM pass, one JSON blob.
      *
-     * Lives on the call rather than the evaluation because it is scorecard-
-     * independent — it is the baseline for calls that have no scorecard yet,
-     * which is most of them on a fresh install. Null means the pass has not
-     * run (LLM off, transcript too short, or the row predates the column).
+     * Lives on the call rather than the evaluation because the assessment
+     * shape is scorecard-independent. It only runs after the agent is set up;
+     * null means the agent is not configured, the LLM is off, the transcript
+     * is empty, or the row predates the column.
      */
     quality: jsonb('quality').$type<CallQuality>(),
     /** Stored quality projections. Null means the quality pass has not run. */

@@ -95,7 +95,7 @@ function onMove(event: MouseEvent) {
 
 <template>
   <div class="relative">
-    <div class="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-2">
+    <div class="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-ink-2">
       <span v-for="item in series" :key="item.label" class="inline-flex items-center gap-1.5">
         <span class="size-2 rounded-sm" :style="{ backgroundColor: item.color }" />
         {{ item.label }}
@@ -121,7 +121,7 @@ function onMove(event: MouseEvent) {
           :x="PAD.left - 8"
           :y="PAD.top + (1 - fraction) * inner.h + 4"
           text-anchor="end"
-          class="fill-ink-3 text-xs"
+          class="fill-ink-3 text-sm"
         >
           {{ formatValue(min + fraction * span) }}
         </text>
@@ -133,7 +133,7 @@ function onMove(event: MouseEvent) {
         :x="xAt(index)"
         :y="H - 8"
         text-anchor="middle"
-        class="fill-ink-3 text-xs"
+        class="fill-ink-3 text-sm"
       >
         {{ points[index]?.label }}
       </text>
@@ -174,7 +174,7 @@ function onMove(event: MouseEvent) {
 
     <div
       v-if="hoverPoint && hover !== null"
-      class="pointer-events-none absolute top-8 min-w-32 rounded-md border border-hairline bg-surface px-2.5 py-2 text-xs shadow-sm"
+      class="pointer-events-none absolute top-8 min-w-32 rounded-md border border-hairline bg-surface px-2.5 py-2 text-sm shadow-sm"
       :style="{ left: `min(max(${(xAt(hover) / W) * 100}% - 4rem, 0%), calc(100% - 9rem))` }"
     >
       <div class="mb-1 font-medium">{{ hoverPoint.label }}</div>

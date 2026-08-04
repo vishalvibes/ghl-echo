@@ -85,7 +85,7 @@ export function transcriptLength(turns: Turn[]): number {
   return turns.reduce((sum, turn) => sum + turn.text.length, 0)
 }
 
-/** Calls too short to say anything meaningful about. Skipped, not failed. */
+/** Calls too short to evaluate meaningfully are skipped, not failed. */
 export const MIN_JUDGEABLE_TURNS = 3
 export const MIN_JUDGEABLE_CHARS = 80
 

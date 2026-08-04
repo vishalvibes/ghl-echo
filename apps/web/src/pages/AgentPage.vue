@@ -20,13 +20,14 @@ const window = ref<AnalyticsWindow>('7d')
 const force = ref(false)
 
 const { data: agent, isLoading } = useAgent(agentId, window)
+const recommendationsEnabled = computed(() => (agent.value?.scorecardVersion ?? 0) > 0)
 const {
   data: recs,
   isLoading: recsLoading,
   isError: recsError,
   error: recsErrorValue,
   refetch: refetchRecs,
-} = useRecommendations(agentId, window, force)
+} = useRecommendations(agentId, window, force, recommendationsEnabled)
 
 const llmDisabled = computed(() => {
   const err = recsErrorValue.value as { status?: number } | null
@@ -52,24 +53,36 @@ async function copyPatch(rank: number, patch: string) {
         </div>
         <div class="flex items-center gap-2">
           <RouterLink
-            :to="`/agents/${agent.id}/scorecard`"
+            :to="{ name: 'agent-settings', query: { agentId: agent.id } }"
             class="rounded-md border border-hairline bg-surface px-3 py-1.5 text-sm hover:bg-plane"
           >
-            Edit scorecard <span class="text-ink-3">v{{ agent.scorecardVersion }}</span>
+            {{ agent.scorecardVersion ? 'Edit agent settings' : 'Set up monitoring' }}
+            <span v-if="agent.scorecardVersion" class="text-ink-3">v{{ agent.scorecardVersion }}</span>
           </RouterLink>
           <WindowSelect v-model="window" />
         </div>
       </div>
 
+      <EmptyState
+        v-if="agent.scorecardVersion === 0"
+        title="Set up this agent to start monitoring"
+        detail="Define pass and fail criteria in Agent settings. Calls can be collected before setup, but Echo will not assess them or issue verdicts."
+      >
+        <RouterLink
+          :to="{ name: 'agent-settings', query: { agentId: agent.id } }"
+          class="mt-3 inline-flex rounded-md bg-series px-3 py-2 text-sm font-medium text-white hover:opacity-90"
+        >
+          Set up agent
+        </RouterLink>
+      </EmptyState>
+
+      <template v-else>
       <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
         <StatTile label="Calls" :value="String(agent.kpis.calls)" />
-        <StatTile
-          label="Pass rate"
-          :value="pct(agent.kpis.passRate)"
-          :delta-pts="Math.round(agent.kpis.passRateDelta * 100)"
-        />
-        <StatTile label="Open actions" :value="String(agent.kpis.openActions)" />
-        <StatTile label="Fail rate" :value="pct(agent.kpis.failRate)" invert />
+        <StatTile label="Evaluated calls" :value="String(agent.kpis.evaluatedCalls)" />
+        <StatTile v-if="agent.kpis.evaluatedCalls > 0" label="Pass rate" :value="pct(agent.kpis.passRate)" :delta-pts="Math.round(agent.kpis.passRateDelta * 100)" />
+        <StatTile v-if="agent.kpis.evaluatedCalls > 0" label="Fail rate" :value="pct(agent.kpis.failRate)" invert />
+        <StatTile label="Open review flags" :value="String(agent.kpis.openActions)" />
       </div>
 
       <div class="grid gap-4 lg:grid-cols-2">
@@ -112,7 +125,7 @@ async function copyPatch(rank: number, patch: string) {
 
       <Card
         title="Copilot recommendations"
-        :subtitle="recs ? `Generated from ${recs.basedOnCalls} failed or partial calls${recs.cached ? ' · cached' : ''}` : undefined"
+        :subtitle="recs ? `Generated from ${recs.basedOnCalls} failed or review-needed calls${recs.cached ? ' · cached' : ''}` : undefined"
       >
         <template #actions>
           <button
@@ -174,6 +187,7 @@ async function copyPatch(rank: number, patch: string) {
           </li>
         </ol>
       </Card>
+      </template>
     </template>
   </div>
 </template>

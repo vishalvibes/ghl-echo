@@ -8,14 +8,14 @@ import { env } from '../config/env.js'
  * function boundary.
  *
  *   call/webhook.received      { webhookEventId: string }
- *   call/transcript.received   { callId: string }
+ *   call/transcript.received   { callId: string; processingKey: string }
  *   agent/backfill.requested   { locationId: string; agentId?: string }
  */
 export const EVENT_WEBHOOK_RECEIVED = 'call/webhook.received'
 export const EVENT_TRANSCRIPT_RECEIVED = 'call/transcript.received'
 export const EVENT_BACKFILL_REQUESTED = 'agent/backfill.requested'
 
-export const inngest = new Inngest({
+export const inngestClient = new Inngest({
   id: 'voice-ai-copilot',
   isDev: env.INNGEST_DEV === '1',
   ...(env.INNGEST_EVENT_KEY ? { eventKey: env.INNGEST_EVENT_KEY } : {}),

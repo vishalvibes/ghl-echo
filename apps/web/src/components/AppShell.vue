@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
-import { ExternalLink, LayoutDashboard, Phone } from 'lucide-vue-next'
+import { ExternalLink, LayoutDashboard, Phone, Settings2 } from 'lucide-vue-next'
 import echoLogo from '../assets/echo-logo.png'
 import { useIntegrationStatus } from '../composables/queries.js'
 import LoadingBlock from './ui/LoadingBlock.vue'
@@ -17,6 +17,7 @@ const voiceAiAgentsUrl = computed(() =>
 const nav = [
   { to: '/', label: 'Overview', icon: LayoutDashboard, match: (p: string) => p === '/' || p.startsWith('/agents') },
   { to: '/calls', label: 'Calls', icon: Phone, match: (p: string) => p.startsWith('/calls') },
+  { to: '/settings', label: 'Agent settings', icon: Settings2, match: (p: string) => p.startsWith('/settings') },
 ]
 </script>
 
@@ -85,7 +86,7 @@ const nav = [
         </div>
 
         <div
-          v-else-if="integration && !integration.hasCalls"
+          v-else-if="integration && !integration.hasCalls && route.name !== 'agent-settings'"
           class="flex min-h-[50vh] flex-col items-center justify-center text-center"
         >
           <img :src="echoLogo" alt="Echo" class="mb-5 h-9 w-auto" />

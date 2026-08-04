@@ -2,11 +2,11 @@ import { and, eq } from 'drizzle-orm'
 import { computeTranscriptMetrics, type CallDirection, type CallOutcome } from '@copilot/shared'
 import { db } from '../db/client.js'
 import { agents, calls, type LocationRow } from '../db/schema.js'
-import { fetchCallLogs, fetchTranscript, fetchVoiceAgent } from '../ghl/client.js'
+import { fetchCallLogs, fetchTranscript, fetchVoiceAgent } from '../clients/highlevel.js'
 import { normalizePlainText, normalizeTranscript, type RawTranscriptEntry } from './normalize.js'
 
 /**
- * Adapter from GHL call-log payloads to our `calls` rows. This is the only
+ * Adapter from HighLevel call-log payloads to our `calls` rows. This is the only
  * file that knows what GHL's Voice AI shapes look like; everything past it
  * sees normalized turns.
  *

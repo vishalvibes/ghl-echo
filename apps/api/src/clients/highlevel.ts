@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm'
 import { env } from '../config/env.js'
 import { db } from '../db/client.js'
 import { locations, type LocationRow } from '../db/schema.js'
-import { decryptToken, encryptToken } from './crypto.js'
+import { decryptToken, encryptToken } from '../lib/token-encryption.js'
 
 /**
  * Minimal HighLevel API client: OAuth token lifecycle plus the three reads

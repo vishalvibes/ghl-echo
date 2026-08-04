@@ -1,7 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { computed, type Ref } from 'vue'
 import type {
-  ActionItem,
   AnalyticsWindow,
   CallDetail,
   CallList,
@@ -57,6 +56,18 @@ export interface AgentDetailResponse {
   trend: Overview['trend']
 }
 
+export interface AgentListItem {
+  id: string
+  name: string
+  ghlAgentId: string
+  promptSyncedAt: string | null
+  configured: boolean
+  monitoringState: 'monitoring' | 'paused' | 'not_configured'
+  processingCalls: number
+  scorecardVersion: number
+  criteriaCount: number
+}
+
 export function useAgent(id: Ref<string>, window: Ref<AnalyticsWindow>) {
   return useQuery({
     queryKey: computed(() => ['agent', id.value, window.value]),
@@ -64,7 +75,12 @@ export function useAgent(id: Ref<string>, window: Ref<AnalyticsWindow>) {
   })
 }
 
-export function useRecommendations(id: Ref<string>, window: Ref<AnalyticsWindow>, force: Ref<boolean>) {
+export function useRecommendations(
+  id: Ref<string>,
+  window: Ref<AnalyticsWindow>,
+  force: Ref<boolean>,
+  enabled: Ref<boolean> = computed(() => true),
+) {
   return useQuery({
     queryKey: computed(() => ['recommendations', id.value, window.value]),
     queryFn: () =>
@@ -73,6 +89,7 @@ export function useRecommendations(id: Ref<string>, window: Ref<AnalyticsWindow>
       ),
     retry: false,
     staleTime: 5 * 60 * 1000,
+    enabled,
   })
 }
 
@@ -111,14 +128,8 @@ export function useCall(id: Ref<string>) {
 export function useAgentList() {
   return useQuery({
     queryKey: ['agents'],
-    queryFn: () => api<{ agents: Array<{ id: string; name: string }> }>('/api/agents'),
-  })
-}
-
-export function useActions(status: Ref<'open' | 'done' | 'dismissed'>) {
-  return useQuery({
-    queryKey: computed(() => ['actions', status.value]),
-    queryFn: () => api<{ items: ActionItem[] }>(`/api/actions?status=${status.value}`),
+    queryFn: () => api<{ agents: AgentListItem[] }>('/api/agents'),
+    refetchInterval: 3_000,
   })
 }
 
@@ -128,8 +139,9 @@ export function useUpdateAction() {
     mutationFn: (args: { id: string; status: 'open' | 'done' | 'dismissed' }) =>
       api(`/api/actions/${args.id}`, { method: 'PATCH', body: JSON.stringify({ status: args.status }) }),
     onSuccess: () => {
-      void client.invalidateQueries({ queryKey: ['actions'] })
       void client.invalidateQueries({ queryKey: ['overview'] })
+      void client.invalidateQueries({ queryKey: ['calls'] })
+      void client.invalidateQueries({ queryKey: ['call'] })
     },
   })
 }
@@ -141,6 +153,8 @@ export function useScorecard(agentId: Ref<string>) {
       api<{ agentId: string; agentName: string; scorecard: Scorecard | null }>(
         `/api/agents/${agentId.value}/scorecard`,
       ),
+    enabled: computed(() => agentId.value.length > 0),
+    refetchOnMount: 'always',
   })
 }
 
@@ -148,8 +162,50 @@ export function useSaveScorecard(agentId: Ref<string>) {
   const client = useQueryClient()
   return useMutation({
     mutationFn: (draft: ScorecardDraft) =>
-      api(`/api/agents/${agentId.value}/scorecard`, { method: 'POST', body: JSON.stringify(draft) }),
-    onSuccess: () => void client.invalidateQueries({ queryKey: ['scorecard', agentId.value] }),
+      api<{ scorecard: Scorecard; queuedCalls: number }>(`/api/agents/${agentId.value}/scorecard`, {
+        method: 'POST',
+        body: JSON.stringify(draft),
+      }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['scorecard', agentId.value] })
+      void client.invalidateQueries({ queryKey: ['agents'] })
+      void client.invalidateQueries({ queryKey: ['overview'] })
+      void client.invalidateQueries({ queryKey: ['agent', agentId.value] })
+    },
+  })
+}
+
+export function useSetMonitoring() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (args: { agentId: string; state: 'monitoring' | 'paused' }) =>
+      api(`/api/agents/${args.agentId}/monitoring`, {
+        method: 'PATCH',
+        body: JSON.stringify({ state: args.state }),
+      }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['agents'] })
+      void client.invalidateQueries({ queryKey: ['overview'] })
+      void client.invalidateQueries({ queryKey: ['agent'] })
+    },
+  })
+}
+
+export interface ScorecardTestResult {
+  callId: string
+  startedAt: string
+  contactPhone: string | null
+  overallScore: number
+  verdict: 'pass' | 'partial' | 'fail'
+}
+
+export function useTestScorecard(agentId: Ref<string>) {
+  return useMutation({
+    mutationFn: (draft: ScorecardDraft) =>
+      api<{ results: ScorecardTestResult[] }>(`/api/agents/${agentId.value}/scorecard/test`, {
+        method: 'POST',
+        body: JSON.stringify({ draft, sampleSize: 1 }),
+      }),
   })
 }
 

@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm'
 import { db } from './client.js'
 import { calls, agents } from './schema.js'
-import { assessQuality } from '../ingest/quality.js'
+import { assessQuality } from '../calls/quality.js'
 
 /**
  * Re-run the quality pass over every call in the local DB.

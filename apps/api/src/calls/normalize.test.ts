@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { isJudgeable, normalizePlainText, normalizeTranscript } from './normalize.js'
 
-describe('normalizeTranscript', () => {
+describe('call transcript normalization', () => {
   it('maps provider role aliases onto agent / caller / system', () => {
     const turns = normalizeTranscript([
       { role: 'assistant', text: 'Hi there' },

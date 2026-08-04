@@ -2,11 +2,15 @@ import { and, eq, inArray, sql } from 'drizzle-orm'
 import { NonRetriableError } from 'inngest'
 import { db } from '../db/client.js'
 import { calls, locations, webhookEvents } from '../db/schema.js'
-import { ingestCallFromGhl, toCandidate } from '../ingest/ghl-ingest.js'
-import { EVENT_TRANSCRIPT_RECEIVED, EVENT_WEBHOOK_RECEIVED, inngest } from './client.js'
+import { ingestCallFromGhl, toCandidate } from '../calls/import-from-highlevel.js'
+import {
+  EVENT_TRANSCRIPT_RECEIVED,
+  EVENT_WEBHOOK_RECEIVED,
+  inngestClient,
+} from '../clients/inngest.js'
 
 /** Turn one durable webhook inbox row into a normalized call. */
-export const processWebhookFn = inngest.createFunction(
+export const handleWebhookEvent = inngestClient.createFunction(
   {
     id: 'process-call-webhook',
     retries: 5,
@@ -103,7 +107,7 @@ export const processWebhookFn = inngest.createFunction(
 
       await step.sendEvent('process-call', {
         name: EVENT_TRANSCRIPT_RECEIVED,
-        data: { callId: result.callId },
+        data: { callId: result.callId, processingKey: `call:${result.callId}` },
       })
 
       await step.run('mark-webhook-processed', async () => {

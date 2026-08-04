@@ -1,5 +1,5 @@
 import type { CallDirection, CallOutcome, JudgeOutput } from '@copilot/shared'
-import { normalizePlainText } from '../ingest/normalize.js'
+import { normalizePlainText } from '../calls/normalize.js'
 import type { Turn } from '@copilot/shared'
 
 /**

@@ -23,9 +23,14 @@ import {
   callActions,
 } from '../db/schema.js'
 import { env } from '../config/env.js'
-import { EVENT_BACKFILL_REQUESTED, inngest } from '../inngest/client.js'
+import { EVENT_BACKFILL_REQUESTED, inngestClient } from '../clients/inngest.js'
 import { syncAgentsForLocation } from './agent-sync.js'
-import { activeScorecardFor } from '../ingest/evaluate.js'
+import {
+  getAgentMonitoringSnapshot,
+  latestScorecardFor,
+  saveAgentScorecard,
+  setAgentMonitoringState,
+} from '../services/agent-monitoring.js'
 import { getRecommendations } from '../insights/recommend.js'
 import { requireSession } from '../lib/session.js'
 import { completeStructured } from '../lib/llm.js'
@@ -104,7 +109,21 @@ export const apiRoutes: FastifyPluginAsyncZod = async (app) => {
       orderBy: (a, { asc }) => [asc(a.name)],
       columns: { id: true, name: true, ghlAgentId: true, promptSyncedAt: true },
     })
-    return { agents: rows }
+    return {
+      agents: await Promise.all(
+        rows.map(async (agent) => {
+          const monitoring = await getAgentMonitoringSnapshot(agent.id)
+          return {
+            ...agent,
+            configured: monitoring.configured,
+            monitoringState: monitoring.state,
+            processingCalls: monitoring.processingCalls,
+            scorecardVersion: monitoring.scorecard?.version ?? 0,
+            criteriaCount: monitoring.scorecard?.criteria.filter((criterion) => criterion.enabled).length ?? 0,
+          }
+        }),
+      ),
+    }
   })
 
   /**
@@ -185,14 +204,15 @@ export const apiRoutes: FastifyPluginAsyncZod = async (app) => {
 
       const { window } = request.query
       const scope = { locationId: request.session.locationId, agentId: agent.id }
-      const [kpis, trend, failureModes, breakdown, scorecard] = await Promise.all([
+      const [kpis, trend, failureModes, breakdown, monitoring] = await Promise.all([
         computeKpis(scope, window),
         computeTrend(scope, window),
         computeFailureModes(scope, window),
         computeCriterionBreakdown(agent.id, window),
-        activeScorecardFor(agent.id),
+        getAgentMonitoringSnapshot(agent.id),
       ])
 
+      const scorecard = monitoring.scorecard
       const meta = new Map(scorecard?.criteria.map((c) => [c.key, c]) ?? [])
       return {
         id: agent.id,
@@ -200,6 +220,7 @@ export const apiRoutes: FastifyPluginAsyncZod = async (app) => {
         window,
         kpis,
         scorecardVersion: scorecard?.version ?? 0,
+        monitoringState: monitoring.state,
         promptSnapshot: agent.promptSnapshot,
         criteria: breakdown
           .map((b) => ({
@@ -492,7 +513,7 @@ export const apiRoutes: FastifyPluginAsyncZod = async (app) => {
     })
     if (!agent) return reply.code(404).send({ error: 'agent not found' })
 
-    await inngest.send({
+    await inngestClient.send({
       name: EVENT_BACKFILL_REQUESTED,
       data: { locationId: request.session.locationId, agentId: agent.id },
     })
@@ -506,7 +527,7 @@ export const apiRoutes: FastifyPluginAsyncZod = async (app) => {
       where: and(eq(agents.id, request.params.id), eq(agents.locationId, request.session.locationId)),
     })
     if (!agent) return reply.code(404).send({ error: 'agent not found' })
-    const scorecard = await activeScorecardFor(agent.id)
+    const scorecard = await latestScorecardFor(agent.id)
     return { agentId: agent.id, agentName: agent.name, scorecard }
   })
 
@@ -519,26 +540,33 @@ export const apiRoutes: FastifyPluginAsyncZod = async (app) => {
       })
       if (!agent) return reply.code(404).send({ error: 'agent not found' })
 
-      const current = await activeScorecardFor(agent.id)
-      const nextVersion = (current?.version ?? 0) + 1
-
-      const [created] = await db.transaction(async (tx) => {
-        if (current) {
-          await tx.update(scorecards).set({ isActive: false }).where(eq(scorecards.id, current.id))
-        }
-        return tx
-          .insert(scorecards)
-          .values({
-            locationId: request.session.locationId,
-            agentId: agent.id,
-            version: nextVersion,
-            passThreshold: request.body.passThreshold,
-            partialThreshold: request.body.partialThreshold,
-            criteria: request.body.criteria,
-          })
-          .returning()
+      const result = await saveAgentScorecard({
+        locationId: request.session.locationId,
+        agentId: agent.id,
+        draft: request.body,
       })
-      return reply.code(201).send(created)
+      return reply.code(201).send(result)
+    },
+  )
+
+  app.patch(
+    '/api/agents/:id/monitoring',
+    {
+      schema: {
+        params: idParam,
+        body: z.object({ state: z.enum(['monitoring', 'paused']) }),
+      },
+    },
+    async (request, reply) => {
+      const agent = await db.query.agents.findFirst({
+        where: and(eq(agents.id, request.params.id), eq(agents.locationId, request.session.locationId)),
+        columns: { id: true },
+      })
+      if (!agent) return reply.code(404).send({ error: 'agent not found' })
+
+      const monitoring = await setAgentMonitoringState(agent.id, request.body.state)
+      if (!monitoring) return reply.code(409).send({ error: 'agent is not configured' })
+      return monitoring
     },
   )
 

@@ -49,6 +49,6 @@ const hasData = computed(() => chartPoints.value.some((point) => point.values.so
       :format="format"
       :aria-label="`${title} cumulative trend`"
     />
-    <p v-else class="py-2 text-center text-xs text-ink-3">No data yet</p>
+    <p v-else class="py-2 text-center text-sm text-ink-3">No data yet</p>
   </Card>
 </template>

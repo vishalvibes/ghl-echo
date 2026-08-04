@@ -10,9 +10,9 @@ import {
   type ZodTypeProvider,
 } from 'fastify-type-provider-zod'
 import { env } from './config/env.js'
+import { inngestClient } from './clients/inngest.js'
 import { closeDb } from './db/client.js'
-import { inngest } from './inngest/client.js'
-import { functions } from './inngest/functions.js'
+import { eventHandlers } from './event-handlers/index.js'
 import { apiRoutes } from './routes/api.js'
 import { authRoutes } from './routes/auth.js'
 import { healthRoutes } from './routes/health.js'
@@ -56,7 +56,7 @@ export async function buildApp() {
   await app.register(authRoutes)
   await app.register(webhookRoutes)
   await app.register(apiRoutes)
-  await app.register(inngestFastify, { client: inngest, functions })
+  await app.register(inngestFastify, { client: inngestClient, functions: eventHandlers })
 
   return app
 }

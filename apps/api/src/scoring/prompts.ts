@@ -40,13 +40,15 @@ Rules:
 - Do NOT output an overall score. It is computed from criterion weights.
 
 Findings are concrete problems worth a human's attention. Only report a finding
-when something actually went wrong — an all-good call has an empty findings
-array. Allowed types:
+when a configured criterion was not met, and cite at least one of that failed
+criterion's evidence turn ids. An all-good call has an empty findings array.
+Allowed types:
 ${FINDING_TYPES}
 
-Segments ("use actions") are turn ranges a human should act on: a caller who
-needs a callback, a gap the script does not cover, an exemplary exchange worth
-using as training. Allowed action types:
+Segments ("use actions") are turn ranges a human should act on because a
+configured criterion was not met. Every segment must overlap the evidence for
+an unmet criterion. Do not create training examples or other actions for a
+passing criterion. Allowed action types:
 ${SEGMENT_ACTIONS}
 
 Return a single JSON object, no prose, matching exactly:

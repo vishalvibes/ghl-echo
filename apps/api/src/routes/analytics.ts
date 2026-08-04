@@ -83,6 +83,7 @@ export async function computeKpis(scope: Scope, window: AnalyticsWindow): Promis
 
   return {
     calls: callAgg[0]?.n ?? 0,
+    evaluatedCalls: current.total,
     passRate,
     failRate: current.total ? current.fail / current.total : 0,
     openActions: actionAgg[0]?.n ?? 0,
@@ -109,6 +110,8 @@ export async function computeMetricTrend(
       date: day,
       calls: count(),
       durationSum: sql<number>`coalesce(sum(${calls.durationSec}), 0)`,
+      turnsSum: sql<number>`coalesce(sum((${calls.metrics} #>> '{turns,total}')::integer), 0)`,
+      turnsN: sql<number>`count(${calls.metrics} #>> '{turns,total}')`,
       talkSum: sql<number>`coalesce(sum(${calls.agentTalkRatio}), 0)`,
       talkN: sql<number>`count(${calls.agentTalkRatio})`,
       interruptionSum: sql<number>`coalesce(sum(${calls.interruptionRate}), 0)`,
@@ -154,6 +157,7 @@ export async function computeMetricTrend(
       date: row.date,
       calls: Number(row.calls),
       cumulativeCalls: totals.calls ?? 0,
+      avgTurns: rounded(ratio('turnsSum', 'turnsN'), 1),
       avgDurationSec: rounded(ratio('durationSum', 'calls'), 0),
       agentTalkShare: rounded(ratio('talkSum', 'talkN')),
       interruptionRate: rounded(ratio('interruptionSum', 'interruptionN')),

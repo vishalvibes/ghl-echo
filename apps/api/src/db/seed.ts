@@ -3,7 +3,7 @@ import { closeDb, db } from './client.js'
 import { agents, calls, locations, scorecards } from './schema.js'
 import { FIXTURE_AGENTS } from '../fixtures/agents.js'
 import { FIXTURE_CALLS } from '../fixtures/calls.js'
-import { persistEvaluation } from '../ingest/evaluate.js'
+import { persistEvaluation } from '../calls/evaluate.js'
 import { computeTranscriptMetrics } from '@copilot/shared'
 
 /**
