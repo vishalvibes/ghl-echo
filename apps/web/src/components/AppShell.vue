@@ -34,7 +34,7 @@ const nav = [
   <div class="flex h-full flex-col">
     <header v-if="integration?.oauthConnected" class="shrink-0 border-b border-hairline bg-surface">
       <div
-        class="mx-auto flex max-w-7xl items-center justify-between gap-4 px-6"
+        class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6"
       >
         <nav class="-mb-px" aria-label="Main">
           <div class="flex items-center gap-1 overflow-x-auto">
@@ -42,7 +42,7 @@ const nav = [
               v-for="item in nav"
               :key="item.to"
               :to="item.to"
-              class="flex shrink-0 items-center gap-2 border-b-2 px-3 py-3.5 text-sm whitespace-nowrap"
+              class="flex shrink-0 items-center gap-2 border-b-2 px-3 py-5 text-sm whitespace-nowrap"
               :class="
                 item.match(route.path)
                   ? 'border-series font-medium text-ink'
@@ -57,14 +57,14 @@ const nav = [
         </nav>
 
         <div class="flex shrink-0 items-center gap-2.5">
-          <img :src="echoLogo" alt="Echo" class="h-6 w-auto" />
+          <img :src="echoLogo" alt="Echo" class="h-8 w-auto" />
           <span class="hidden truncate text-sm text-ink-3 sm:inline">Agent observability</span>
         </div>
       </div>
     </header>
 
     <main class="min-w-0 flex-1 overflow-y-auto bg-plane">
-      <div class="mx-auto max-w-7xl px-6 pt-3 pb-32">
+      <div class="mx-auto max-w-6xl px-6 pt-3 pb-32">
         <LoadingBlock v-if="isLoading" />
 
         <div v-else-if="isError" class="flex min-h-[50vh] flex-col items-center justify-center text-center">

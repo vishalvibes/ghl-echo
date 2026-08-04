@@ -94,7 +94,11 @@ function statusLabel(agent: AgentListItem) {
                 </span>
               </td>
               <td class="px-4 py-3 text-ink-2">
-                {{ agent.configured ? 'Custom scorecard' : 'Default monitoring' }}
+                {{
+                  agent.configured
+                    ? `${agent.criteriaCount} ${agent.criteriaCount === 1 ? 'criterion' : 'criteria'}`
+                    : 'Default monitoring'
+                }}
               </td>
               <td class="px-4 py-3">
                 <div class="flex items-center justify-end gap-2">

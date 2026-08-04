@@ -4,8 +4,6 @@ import { RouterLink, useRoute } from 'vue-router'
 import { AlertTriangle, ArrowLeft, LoaderCircle } from 'lucide-vue-next'
 import {
   SEGMENT_ACTION_LABELS,
-  FINDING_TYPE_LABELS,
-  VERDICT_LABELS,
 } from '@copilot/shared'
 import { useCall, useUpdateAction } from '../composables/queries.js'
 import { dateTime, duration, turnStamp } from '../lib/format.js'
@@ -23,7 +21,7 @@ const callsBackTarget = computed(() =>
     : { path: '/calls' },
 )
 
-/** Turn ids to highlight, driven by hovering/clicking evidence in the panel. */
+/** Turn ids to highlight, driven by clicking evidence / use actions in the panel. */
 const highlighted = ref<Set<number>>(new Set())
 
 function focusTurns(turnIds: number[]) {
@@ -34,23 +32,31 @@ function focusTurns(turnIds: number[]) {
   }
 }
 
-/** Open review ranges mapped to the transcript turns they flag. */
-const reviewFlagTurns = computed(() => {
-  const map = new Map<number, string>()
+/** Expand a use-action segment to every turn it covers, then focus that range. */
+function focusSegment(segment: { turnStart: number; turnEnd: number }) {
+  const ids: number[] = []
+  for (let id = segment.turnStart; id <= segment.turnEnd; id++) ids.push(id)
+  focusTurns(ids)
+}
+
+/**
+ * Open use actions for the transcript: rings on every covered turn, but the
+ * label chip only on the first turn of each segment so a 3-turn range does not
+ * print "Human follow-up" three times.
+ */
+const useActions = computed(() => {
+  const inRange = new Set<number>()
+  const startLabels = new Map<number, string[]>()
   for (const segment of call.value?.evaluation?.segments ?? []) {
     if (segment.status !== 'open') continue
-    for (let id = segment.turnStart; id <= segment.turnEnd; id++) {
-      map.set(id, SEGMENT_ACTION_LABELS[segment.actionType] ?? segment.actionType)
-    }
+    const label = SEGMENT_ACTION_LABELS[segment.actionType] ?? segment.actionType
+    for (let id = segment.turnStart; id <= segment.turnEnd; id++) inRange.add(id)
+    const existing = startLabels.get(segment.turnStart) ?? []
+    if (!existing.includes(label)) existing.push(label)
+    startLabels.set(segment.turnStart, existing)
   }
-  return map
+  return { inRange, startLabels }
 })
-
-const severityClass: Record<string, string> = {
-  high: 'text-critical',
-  medium: 'text-serious',
-  low: 'text-ink-2',
-}
 
 /**
  * Conversation mechanics, computed server-side by `computeTranscriptMetrics`
@@ -74,12 +80,6 @@ const flaggedTurns = computed(() => ({
  * read — it costs a model call — so the panel simply hides when it is absent.
  */
 const quality = computed(() => call.value?.quality ?? null)
-
-const criteriaSubtitle = computed(() => {
-  const evaluation = call.value?.evaluation
-  if (!evaluation) return undefined
-  return `${VERDICT_LABELS[evaluation.verdict]} · ${evaluation.overallScore}/100 · scorecard v${evaluation.scorecardVersion}`
-})
 
 function criterionValue(value: number | string | null) {
   if (value === null) return ''
@@ -174,15 +174,8 @@ function shortInsight(insight: string) {
             </p>
           </div>
 
-          <div v-if="call.overallScore !== null || call.isMock" class="flex flex-wrap items-center gap-2">
+          <div v-if="call.isMock" class="flex flex-wrap items-center gap-2">
             <span
-              v-if="call.overallScore !== null"
-              class="rounded-full border border-hairline px-2 py-0.5 text-sm text-ink-3"
-            >
-              Score {{ call.overallScore }}/100
-            </span>
-            <span
-              v-if="call.isMock"
               class="rounded-full border border-hairline px-2 py-0.5 text-sm font-medium tracking-wide text-ink-3 uppercase"
             >
               Demo
@@ -252,12 +245,8 @@ function shortInsight(insight: string) {
         </div>
       </dl>
 
-      <p v-if="call.evaluation" class="rounded-lg border border-hairline bg-surface px-4 py-3 text-sm text-ink-2">
+      <p v-if="call.evaluation" class="rounded-lg border border-hairline bg-surface px-4 py-3 text-base text-ink-2">
         {{ call.evaluation.summary }}
-        <span class="text-sm text-ink-3">
-          · sentiment {{ call.evaluation.callerSentiment }} · scorecard v{{ call.evaluation.scorecardVersion }} ·
-          {{ call.evaluation.model }}
-        </span>
       </p>
 
       <!--
@@ -289,7 +278,11 @@ function shortInsight(insight: string) {
                       : turn.role === 'agent'
                         ? 'rounded-bl-sm bg-plane text-ink'
                         : 'bg-transparent text-ink-3 italic',
-                    highlighted.has(turn.id) ? 'ring-2 ring-series ring-offset-2 ring-offset-surface' : '',
+                    highlighted.has(turn.id)
+                      ? 'ring-2 ring-series ring-offset-2 ring-offset-surface'
+                      : useActions.inRange.has(turn.id)
+                        ? 'ring-2 ring-warning ring-offset-2 ring-offset-surface'
+                        : '',
                   ]"
                 >
                   {{ turn.text }}
@@ -304,11 +297,18 @@ function shortInsight(insight: string) {
                 </div>
 
                 <div
-                  v-if="reviewFlagTurns.has(turn.id)"
-                  class="mt-0.5 flex items-center gap-1 px-1 text-sm font-medium text-ink-2"
+                  v-if="useActions.startLabels.has(turn.id)"
+                  class="mt-1.5 flex flex-wrap gap-1.5 px-1"
+                  :class="turn.role === 'caller' ? 'justify-end' : ''"
                 >
-                  <AlertTriangle class="size-3.5 text-warning" aria-hidden="true" />
-                  {{ reviewFlagTurns.get(turn.id) }}
+                  <span
+                    v-for="label in useActions.startLabels.get(turn.id)"
+                    :key="label"
+                    class="inline-flex items-center gap-1.5 rounded-md border border-warning/40 bg-warning/10 px-2 py-1 text-sm font-medium text-ink"
+                  >
+                    <AlertTriangle class="size-3.5 shrink-0 text-warning" aria-hidden="true" />
+                    {{ label }}
+                  </span>
                 </div>
 
                 <!--
@@ -341,10 +341,9 @@ function shortInsight(insight: string) {
         <div class="min-w-0 space-y-3 lg:sticky lg:top-4">
           <Card
             v-if="call.evaluation?.criteria.length"
-            title="Criteria"
-            :subtitle="criteriaSubtitle"
+            title="Checks"
           >
-            <ul class="divide-y divide-hairline">
+            <ul class="divide-y divide-hairline text-sm">
               <li
                 v-for="criterion in call.evaluation.criteria"
                 :key="criterion.key"
@@ -357,11 +356,11 @@ function shortInsight(insight: string) {
                 >
                   <span class="min-w-0 truncate font-medium">{{ criterion.label }}</span>
                   <span class="flex shrink-0 items-center gap-2">
-                    <span v-if="criterion.value !== null" class="text-sm text-ink-3">
+                    <span v-if="criterion.value !== null" class="text-ink-3">
                       {{ criterionValue(criterion.value) }}
                     </span>
                     <span
-                      class="rounded-full border px-2 py-0.5 text-sm font-medium"
+                      class="rounded-full border px-2 py-0.5 font-medium"
                       :class="criterion.met
                         ? 'border-good/30 bg-good/10 text-good-text'
                         : 'border-critical/30 bg-critical/5 text-critical'"
@@ -404,30 +403,14 @@ function shortInsight(insight: string) {
             </ul>
           </Card>
 
-          <Card v-if="call.evaluation && call.evaluation.findings.length" title="Findings">
-            <ul class="space-y-3">
-              <li v-for="finding in call.evaluation.findings" :key="finding.id">
-                <button class="w-full rounded-md px-1.5 py-1 text-left hover:bg-plane" @click="focusTurns(finding.turnIds)">
-                  <div class="flex items-center gap-1.5 text-sm font-medium">
-                    <span :class="severityClass[finding.severity]" aria-hidden="true">●</span>
-                    {{ finding.title }}
-                    <span class="text-sm uppercase text-ink-3">{{ finding.severity }}</span>
-                  </div>
-                  <p class="mt-0.5 text-sm text-ink-2">{{ finding.detail }}</p>
-                  <p v-if="finding.quote" class="mt-1 border-l-2 border-hairline pl-2 text-sm italic text-ink-3">
-                    “{{ finding.quote }}”
-                  </p>
-                  <span class="text-sm text-ink-3">{{ FINDING_TYPE_LABELS[finding.type] ?? finding.type }}</span>
-                </button>
-              </li>
-            </ul>
-          </Card>
-
-          <Card v-if="call.evaluation && call.evaluation.segments.length" title="Flagged for review">
+          <Card
+            v-if="call.evaluation && call.evaluation.segments.length"
+            title="Use actions"
+          >
             <ul class="space-y-2.5">
               <li v-for="segment in call.evaluation.segments" :key="segment.id" class="text-sm">
                 <div class="flex items-start justify-between gap-2">
-                  <button class="text-left hover:underline" @click="focusTurns([segment.turnStart])">
+                  <button class="text-left hover:underline" @click="focusSegment(segment)">
                     <span class="font-medium">{{ SEGMENT_ACTION_LABELS[segment.actionType] ?? segment.actionType }}</span>
                     <span class="block text-sm text-ink-2">{{ segment.reason }}</span>
                     <span class="text-sm text-ink-3">turns {{ segment.turnStart }}–{{ segment.turnEnd }}</span>
@@ -460,14 +443,14 @@ function shortInsight(insight: string) {
             </ul>
           </Card>
 
-          <Card v-if="!call.evaluation?.criteria.length" title="Criteria">
+          <Card v-if="!call.evaluation?.criteria.length" title="Checks">
             <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
-              <span class="text-ink-2">No criteria results for {{ call.agentName }}.</span>
+              <span class="text-ink-2">No checks for {{ call.agentName }}.</span>
               <RouterLink
                 :to="{ name: 'agent-settings', query: { agentId: call.agentId } }"
                 class="font-medium text-series hover:underline"
               >
-                Add criteria
+                Add checks
               </RouterLink>
             </div>
           </Card>
