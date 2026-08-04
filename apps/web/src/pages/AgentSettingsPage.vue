@@ -1,12 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Pause, Play, Settings2 } from 'lucide-vue-next'
-import {
-  useAgentList,
-  useSetMonitoring,
-  type AgentListItem,
-} from '../composables/queries.js'
+import { Settings2 } from 'lucide-vue-next'
+import { useAgentList, type AgentListItem } from '../composables/queries.js'
 import AgentSetupDialog from '../components/agent-settings/AgentSetupDialog.vue'
 import Card from '../components/ui/Card.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
@@ -15,7 +11,6 @@ import LoadingBlock from '../components/ui/LoadingBlock.vue'
 const route = useRoute()
 const router = useRouter()
 const { data: agentList, isLoading } = useAgentList()
-const setMonitoring = useSetMonitoring()
 
 const selectedAgentId = ref('')
 const toast = ref('')
@@ -60,21 +55,9 @@ function handleSaved(message: string) {
   showToast(message)
 }
 
-async function toggleMonitoring(agent: AgentListItem) {
-  const state = agent.monitoringState === 'monitoring' ? 'paused' : 'monitoring'
-  try {
-    await setMonitoring.mutateAsync({ agentId: agent.id, state })
-    showToast(state === 'paused' ? `${agent.name} paused` : `${agent.name} resumed`)
-  } catch {
-    showToast(`Could not ${state === 'paused' ? 'pause' : 'resume'} ${agent.name}`)
-  }
-}
-
 function statusLabel(agent: AgentListItem) {
-  if (agent.processingCalls > 0) return `Evaluating ${agent.processingCalls} calls…`
-  if (agent.monitoringState === 'monitoring') return 'Monitoring'
-  if (agent.monitoringState === 'paused') return 'Paused'
-  return 'Not set up'
+  if (agent.processingCalls > 0) return `Analyzing ${agent.processingCalls} calls…`
+  return 'Monitoring'
 }
 </script>
 
@@ -105,15 +88,13 @@ function statusLabel(agent: AgentListItem) {
                   class="inline-flex rounded-full border px-2 py-0.5 text-sm font-medium"
                   :class="agent.processingCalls > 0
                     ? 'border-warning/40 bg-warning/10 text-ink'
-                    : agent.monitoringState === 'monitoring'
-                      ? 'border-good/30 bg-good/10 text-good-text'
-                      : 'border-hairline bg-plane text-ink-2'"
+                    : 'border-good/30 bg-good/10 text-good-text'"
                 >
                   {{ statusLabel(agent) }}
                 </span>
               </td>
               <td class="px-4 py-3 text-ink-2">
-                {{ agent.configured ? `${agent.criteriaCount} active · v${agent.scorecardVersion}` : '—' }}
+                {{ agent.configured ? 'Custom scorecard' : 'Default monitoring' }}
               </td>
               <td class="px-4 py-3">
                 <div class="flex items-center justify-end gap-2">
@@ -122,17 +103,7 @@ function statusLabel(agent: AgentListItem) {
                     @click="openSetup(agent.id)"
                   >
                     <Settings2 class="size-3.5" aria-hidden="true" />
-                    {{ agent.configured ? 'Edit settings' : 'Set up' }}
-                  </button>
-                  <button
-                    v-if="agent.configured"
-                    class="inline-flex items-center gap-1.5 rounded-md border border-hairline bg-surface px-3 py-1.5 font-medium hover:bg-plane disabled:opacity-50"
-                    :disabled="setMonitoring.isPending.value"
-                    @click="toggleMonitoring(agent)"
-                  >
-                    <Pause v-if="agent.monitoringState === 'monitoring'" class="size-3.5" aria-hidden="true" />
-                    <Play v-else class="size-3.5" aria-hidden="true" />
-                    {{ agent.monitoringState === 'monitoring' ? 'Pause' : 'Resume' }}
+                    {{ agent.configured ? 'Edit criteria' : 'Add criteria' }}
                   </button>
                 </div>
               </td>

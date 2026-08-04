@@ -2,8 +2,8 @@
 
 An **Agent Observability Copilot** for HighLevel Voice AI agents. It automates
 the *Monitor* and *Analyze* phases: ingest call transcripts, judge every call
-against a per-agent scorecard with an LLM, and turn the failures into ranked,
-evidence-linked prompt fixes.
+with an LLM, optionally apply additional per-agent scorecard criteria, and turn
+evidence-backed failures into ranked prompt fixes.
 
 ```
 GHL call ends ──webhook──▶ API ──queue──▶ LLM judge ──▶ scores / findings / actions
@@ -59,6 +59,7 @@ OPENAI_API_KEY=sk-...
 | Piece | Status |
 |---|---|
 | Transcript normalization, judging, scoring, storage | functional |
+| Always-on call quality monitoring | functional; custom criteria are optional |
 | Dashboard (overview, agent detail, calls, call evidence, actions, scorecards) | functional |
 | LLM judge + recommendations + criteria generation | functional (needs OpenAI key) |
 | GHL OAuth install flow, webhook ingest, backfill | implemented, needs marketplace app credentials |
@@ -85,7 +86,8 @@ OPENAI_API_KEY=sk-...
    origin — the dashboard exchanges the iframe context for a session and scopes
    every read to that location.
 4. Point the app's call-completed webhook at `<your-host>/webhooks/ghl`.
-   Install triggers an automatic backfill of historical call logs.
+   Install triggers an API backfill of available call logs. New calls arrive
+   through webhooks.
 
 ## EC2 deployment
 

@@ -179,5 +179,5 @@ export async function listBackfillCandidates(
     ghlAgentId = agent?.ghlAgentId
   }
   const logs = await fetchCallLogs(location, { agentId: ghlAgentId })
-  return logs.map(toCandidate).filter((c): c is CallCandidate => c !== null)
+  return logs.map(toCandidate).filter((candidate): candidate is CallCandidate => candidate !== null)
 }

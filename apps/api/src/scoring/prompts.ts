@@ -182,6 +182,10 @@ Rules:
   badly those calls failed.
 - Ground every recommendation in the clusters you were given. Never invent a
   failure mode that is not in the data.
+- Recommend a script change only for a concrete issue evidenced by those
+  clusters. Do not add optional improvements, generic best practices, or
+  positive-call suggestions just to populate the response. Return an empty
+  items array when nothing needs changing.
 - promptPatch must be text the user can paste into their agent prompt. Write the
   actual replacement wording, not a description of it. Use null only when the
   fix genuinely is not a prompt change (for example, a routing or staffing fix).

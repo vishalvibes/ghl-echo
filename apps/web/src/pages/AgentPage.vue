@@ -56,7 +56,7 @@ async function copyPatch(rank: number, patch: string) {
             :to="{ name: 'agent-settings', query: { agentId: agent.id } }"
             class="rounded-md border border-hairline bg-surface px-3 py-1.5 text-sm hover:bg-plane"
           >
-            {{ agent.scorecardVersion ? 'Edit agent settings' : 'Set up monitoring' }}
+            {{ agent.scorecardVersion ? 'Edit criteria' : 'Add criteria' }}
             <span v-if="agent.scorecardVersion" class="text-ink-3">v{{ agent.scorecardVersion }}</span>
           </RouterLink>
           <WindowSelect v-model="window" />
@@ -65,18 +65,17 @@ async function copyPatch(rank: number, patch: string) {
 
       <EmptyState
         v-if="agent.scorecardVersion === 0"
-        title="Set up this agent to start monitoring"
-        detail="Define pass and fail criteria in Agent settings. Calls can be collected before setup, but Echo will not assess them or issue verdicts."
+        title="Default monitoring is active"
+        detail="Echo analyzes every call automatically. Add custom criteria only when you want agent-specific pass and fail scoring."
       >
         <RouterLink
           :to="{ name: 'agent-settings', query: { agentId: agent.id } }"
           class="mt-3 inline-flex rounded-md bg-series px-3 py-2 text-sm font-medium text-white hover:opacity-90"
         >
-          Set up agent
+          Add custom criteria
         </RouterLink>
       </EmptyState>
 
-      <template v-else>
       <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
         <StatTile label="Calls" :value="String(agent.kpis.calls)" />
         <StatTile label="Evaluated calls" :value="String(agent.kpis.evaluatedCalls)" />
@@ -86,8 +85,12 @@ async function copyPatch(rank: number, patch: string) {
       </div>
 
       <div class="grid gap-4 lg:grid-cols-2">
-        <Card title="Criterion breakdown" subtitle="Share of calls meeting each criterion — weakest first">
-          <EmptyState v-if="agent.criteria.length === 0" title="No evaluations in this window" />
+        <Card title="Custom criteria" subtitle="Share of calls meeting each additional criterion — weakest first">
+          <EmptyState
+            v-if="agent.criteria.length === 0"
+            title="No custom criteria"
+            detail="Default call monitoring continues without custom scoring."
+          />
           <ul v-else class="space-y-3">
             <li v-for="criterion in agent.criteria" :key="criterion.key">
               <div class="mb-1 flex items-baseline justify-between text-sm">
@@ -114,7 +117,7 @@ async function copyPatch(rank: number, patch: string) {
         <div class="space-y-4">
           <Card title="Pass rate over time">
             <TrendChart v-if="agent.trend.length" :points="agent.trend" />
-            <EmptyState v-else title="No evaluated calls in this window" />
+            <EmptyState v-else title="No custom scorecard evaluations in this window" />
           </Card>
           <Card title="Failure modes">
             <BarList v-if="agent.failureModes.length" :items="agent.failureModes" />
@@ -124,6 +127,7 @@ async function copyPatch(rank: number, patch: string) {
       </div>
 
       <Card
+        v-if="agent.scorecardVersion > 0"
         title="Copilot recommendations"
         :subtitle="recs ? `Generated from ${recs.basedOnCalls} failed or review-needed calls${recs.cached ? ' · cached' : ''}` : undefined"
       >
@@ -145,8 +149,8 @@ async function copyPatch(rank: number, patch: string) {
         <EmptyState v-else-if="recsError" title="Could not generate recommendations" />
         <EmptyState
           v-else-if="recs && recs.items.length === 0"
-          title="Nothing to fix"
-          detail="No failure clusters in this window — the agent is meeting its criteria."
+          title="No script changes recommended"
+          detail="There are no evidence-backed criterion issues requiring a script change in this window."
         />
 
         <ol v-else-if="recs" class="space-y-4">
@@ -187,7 +191,6 @@ async function copyPatch(rank: number, patch: string) {
           </li>
         </ol>
       </Card>
-      </template>
     </template>
   </div>
 </template>

@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm'
 import { db } from '../db/client.js'
-import { agents, calls, scorecards, type AgentRow, type CallRow } from '../db/schema.js'
+import { agents, calls, type AgentRow, type CallRow } from '../db/schema.js'
 import { assessCallQuality, sanitizeQuality } from '../scoring/quality.js'
 
 /**
@@ -45,15 +45,5 @@ export async function assessQualityCall(callId: string) {
   if (!call) throw new Error(`Call not found: ${callId}`)
   const agent = await db.query.agents.findFirst({ where: eq(agents.id, call.agentId) })
   if (!agent) throw new Error(`Agent not found for call ${callId}`)
-
-  // Agent setup is the activation boundary for every model-driven assessment.
-  // We still retain the transcript and deterministic mechanics, but Echo does
-  // not interpret the call until the user has defined what success means.
-  const scorecard = await db.query.scorecards.findFirst({
-    where: (sc, { and, eq: eqOp }) => and(eqOp(sc.agentId, agent.id), eqOp(sc.isActive, true)),
-    columns: { id: true },
-  })
-  if (!scorecard) return { assessed: false, reason: 'agent not configured' }
-
   return assessQuality(call, agent)
 }

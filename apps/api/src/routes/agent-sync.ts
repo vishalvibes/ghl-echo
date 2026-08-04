@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm'
 import { db } from '../db/client.js'
-import { agents, scorecards, type LocationRow } from '../db/schema.js'
+import { agents, type LocationRow } from '../db/schema.js'
 import { fetchVoiceAgents } from '../clients/highlevel.js'
 
 /**
@@ -35,12 +35,4 @@ export async function syncAgentsForLocation(location: LocationRow): Promise<{ sy
     synced++
   }
   return { synced }
-}
-
-export async function hasActiveScorecard(agentId: string): Promise<boolean> {
-  const row = await db.query.scorecards.findFirst({
-    where: and(eq(scorecards.agentId, agentId), eq(scorecards.isActive, true)),
-    columns: { id: true },
-  })
-  return row !== undefined
 }

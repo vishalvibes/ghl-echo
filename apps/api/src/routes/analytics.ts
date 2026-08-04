@@ -202,20 +202,60 @@ export async function computeTrend(scope: Scope, window: AnalyticsWindow): Promi
 }
 
 export async function computeFailureModes(scope: Scope, window: AnalyticsWindow): Promise<FailureMode[]> {
-  const since = windowStart(window)
-  const conditions = [eq(findings.locationId, scope.locationId), gte(findings.createdAt, since)]
-  if (scope.agentId) conditions.push(eq(findings.agentId, scope.agentId))
+  const since = windowStart(window).toISOString()
+  const agentFilter = scope.agentId ? sql`and c.agent_id = ${scope.agentId}` : sql``
 
-  const rows = await db
-    .select({ type: findings.type, n: count() })
-    .from(findings)
-    .where(and(...conditions))
-    .groupBy(findings.type)
-    .orderBy(desc(count()))
+  /**
+   * Keep review flags criteria-driven, but do not leave baseline observability
+   * empty for agents without a custom scorecard. The UNION de-duplicates the
+   * same call/type when both the quality pass and a custom criterion identify
+   * it, so the chart counts affected calls rather than implementation layers.
+   */
+  const rows = await db.execute<{ type: FindingType; n: number }>(sql`
+    with mode_occurrences as (
+      select f.call_id, f.type::text as type
+      from findings f
+      inner join calls c on c.id = f.call_id
+      where c.location_id = ${scope.locationId}
+        and c.started_at >= ${since}::timestamptz
+        ${agentFilter}
+
+      union
+
+      select c.id as call_id, 'missed_goal'::text as type
+      from calls c
+      where c.location_id = ${scope.locationId}
+        and c.started_at >= ${since}::timestamptz
+        and c.task_outcome in ('unresolved', 'partially_resolved')
+        ${agentFilter}
+
+      union
+
+      select c.id as call_id, 'abrupt_ending'::text as type
+      from calls c
+      where c.location_id = ${scope.locationId}
+        and c.started_at >= ${since}::timestamptz
+        and c.premature_hangup = true
+        ${agentFilter}
+
+      union
+
+      select c.id as call_id, 'poor_listening'::text as type
+      from calls c
+      where c.location_id = ${scope.locationId}
+        and c.started_at >= ${since}::timestamptz
+        and c.comprehension_score <= 2
+        ${agentFilter}
+    )
+    select type, count(*)::integer as n
+    from mode_occurrences
+    group by type
+    order by n desc, type
+  `)
 
   return rows.map((row) => ({
-    type: row.type as FindingType,
-    label: FINDING_TYPE_LABELS[row.type as FindingType] ?? row.type,
+    type: row.type,
+    label: FINDING_TYPE_LABELS[row.type] ?? row.type,
     count: row.n,
   }))
 }

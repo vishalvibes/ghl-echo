@@ -62,7 +62,6 @@ export interface AgentListItem {
   ghlAgentId: string
   promptSyncedAt: string | null
   configured: boolean
-  monitoringState: 'monitoring' | 'paused' | 'not_configured'
   processingCalls: number
   scorecardVersion: number
   criteriaCount: number
@@ -122,6 +121,10 @@ export function useCall(id: Ref<string>) {
   return useQuery({
     queryKey: computed(() => ['call', id.value]),
     queryFn: () => api<CallDetail>(`/api/calls/${id.value}`),
+    // A freshly imported call is visible before its model-driven analysis
+    // finishes. Poll only during that transition so the page updates itself
+    // without turning every call detail view into a permanent polling loop.
+    refetchInterval: (query) => query.state.data?.ingestStatus === 'pending' ? 2_000 : false,
   })
 }
 
@@ -171,22 +174,6 @@ export function useSaveScorecard(agentId: Ref<string>) {
       void client.invalidateQueries({ queryKey: ['agents'] })
       void client.invalidateQueries({ queryKey: ['overview'] })
       void client.invalidateQueries({ queryKey: ['agent', agentId.value] })
-    },
-  })
-}
-
-export function useSetMonitoring() {
-  const client = useQueryClient()
-  return useMutation({
-    mutationFn: (args: { agentId: string; state: 'monitoring' | 'paused' }) =>
-      api(`/api/agents/${args.agentId}/monitoring`, {
-        method: 'PATCH',
-        body: JSON.stringify({ state: args.state }),
-      }),
-    onSuccess: () => {
-      void client.invalidateQueries({ queryKey: ['agents'] })
-      void client.invalidateQueries({ queryKey: ['overview'] })
-      void client.invalidateQueries({ queryKey: ['agent'] })
     },
   })
 }

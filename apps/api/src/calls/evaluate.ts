@@ -179,9 +179,12 @@ export async function evaluateCall(callId: string): Promise<PersistedEvaluation 
   if (!scorecard) {
     await db
       .update(calls)
-      .set({ ingestStatus: 'skipped', ingestError: 'no active scorecard' })
+      // Base monitoring completed successfully. A custom scorecard is an
+      // optional extension, so its absence must not make the call look failed
+      // or skipped.
+      .set({ ingestStatus: 'evaluated', ingestError: null })
       .where(eq(calls.id, call.id))
-    return { skipped: 'no active scorecard' }
+    return { skipped: 'no custom scorecard' }
   }
 
   const existing = await db.query.evaluations.findFirst({

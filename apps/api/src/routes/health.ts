@@ -67,7 +67,7 @@ export const healthRoutes: FastifyPluginAsyncZod = async (app) => {
       },
       llm: {
         state: llmEnabled ? 'ok' : 'disabled',
-        detail: llmEnabled ? env.OPENAI_MODEL : 'OPENAI_ENABLED=false — evaluations paused',
+        detail: llmEnabled ? env.OPENAI_MODEL : 'OPENAI_ENABLED=false — model analysis unavailable',
       },
       ghl: {
         state: env.GHL_CLIENT_ID ? 'ok' : 'disabled',

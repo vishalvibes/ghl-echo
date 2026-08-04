@@ -126,7 +126,7 @@ docker exec supabase_db_template psql -U postgres -d postgres -c "select id, nam
 
 ## Inngest MCP
 
-The `inngest` MCP server (`.mcp.json`, `http://127.0.0.1:8288/mcp`) inspects the queue on the local Inngest Dev Server — registered functions (`evaluate-call`, `backfill-agent`, `sweep-pending-calls`), run status, events, manual triggers. Requires the Dev Server running (`make dev`).
+The `inngest` MCP server (`.mcp.json`, `http://127.0.0.1:8288/mcp`) inspects the queue on the local Inngest Dev Server — registered functions (`process-call-webhook`, `process-call`, `backfill-agent`, `sweep-pending-calls`), run status, events, manual triggers. Requires the Dev Server running (`make dev`).
 
 ## Git workflow
 

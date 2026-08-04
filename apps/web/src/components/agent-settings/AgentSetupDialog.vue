@@ -131,7 +131,7 @@ function requestClose() {
       >
         <header class="flex shrink-0 items-center justify-between gap-4 border-b border-hairline px-5 py-4">
           <h2 id="agent-settings-title" class="text-lg font-semibold">
-            {{ agent.configured ? 'Edit' : 'Set up' }} {{ agent.name }}
+            {{ agent.configured ? 'Edit criteria for' : 'Add criteria for' }} {{ agent.name }}
           </h2>
           <button class="rounded-md p-1 text-ink-3 hover:bg-plane hover:text-ink" aria-label="Close" @click="requestClose">
             <X class="size-5" aria-hidden="true" />
@@ -229,12 +229,12 @@ function requestClose() {
             <section v-if="criteria.length > 0" class="mt-5 border-t border-hairline pt-4">
               <div class="flex items-baseline justify-between gap-3">
                 <h3 class="text-sm font-semibold">Verdict thresholds</h3>
-                <span class="text-xs text-ink-3">Average score</span>
+                <span class="text-sm text-ink-3">Average score</span>
               </div>
 
               <div class="mt-3 grid grid-cols-3 divide-x divide-hairline rounded-lg border border-hairline bg-plane/40">
                 <label class="min-w-0 px-3 py-2.5">
-                  <span class="block text-xs text-ink-3">Pass</span>
+                  <span class="block text-sm text-ink-3">Pass</span>
                   <div class="mt-1 flex items-center gap-1.5">
                     <input
                       v-model.number="passThreshold"
@@ -248,11 +248,11 @@ function requestClose() {
                   </div>
                 </label>
                 <div class="min-w-0 px-3 py-2.5">
-                  <span class="block text-xs text-ink-3">Needs review</span>
+                  <span class="block text-sm text-ink-3">Needs review</span>
                   <p class="mt-2 text-sm tabular-nums text-ink-2">{{ reviewRange }}</p>
                 </div>
                 <label class="min-w-0 px-3 py-2.5">
-                  <span class="block text-xs text-ink-3">Fail below</span>
+                  <span class="block text-sm text-ink-3">Fail below</span>
                   <input
                     v-model.number="partialThreshold"
                     type="number"
@@ -280,7 +280,7 @@ function requestClose() {
               :disabled="criteria.length === 0 || !!validationError || (!dirty && agent.configured) || save.isPending.value"
               @click="submit"
             >
-              {{ save.isPending.value ? 'Saving…' : agent.configured ? 'Save settings' : 'Start monitoring' }}
+              {{ save.isPending.value ? 'Saving…' : 'Save criteria' }}
             </button>
           </div>
         </footer>

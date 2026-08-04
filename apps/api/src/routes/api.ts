@@ -29,7 +29,6 @@ import {
   getAgentMonitoringSnapshot,
   latestScorecardFor,
   saveAgentScorecard,
-  setAgentMonitoringState,
 } from '../services/agent-monitoring.js'
 import { getRecommendations } from '../insights/recommend.js'
 import { requireSession } from '../lib/session.js'
@@ -116,7 +115,6 @@ export const apiRoutes: FastifyPluginAsyncZod = async (app) => {
           return {
             ...agent,
             configured: monitoring.configured,
-            monitoringState: monitoring.state,
             processingCalls: monitoring.processingCalls,
             scorecardVersion: monitoring.scorecard?.version ?? 0,
             criteriaCount: monitoring.scorecard?.criteria.filter((criterion) => criterion.enabled).length ?? 0,
@@ -220,7 +218,6 @@ export const apiRoutes: FastifyPluginAsyncZod = async (app) => {
         window,
         kpis,
         scorecardVersion: scorecard?.version ?? 0,
-        monitoringState: monitoring.state,
         promptSnapshot: agent.promptSnapshot,
         criteria: breakdown
           .map((b) => ({
@@ -546,27 +543,6 @@ export const apiRoutes: FastifyPluginAsyncZod = async (app) => {
         draft: request.body,
       })
       return reply.code(201).send(result)
-    },
-  )
-
-  app.patch(
-    '/api/agents/:id/monitoring',
-    {
-      schema: {
-        params: idParam,
-        body: z.object({ state: z.enum(['monitoring', 'paused']) }),
-      },
-    },
-    async (request, reply) => {
-      const agent = await db.query.agents.findFirst({
-        where: and(eq(agents.id, request.params.id), eq(agents.locationId, request.session.locationId)),
-        columns: { id: true },
-      })
-      if (!agent) return reply.code(404).send({ error: 'agent not found' })
-
-      const monitoring = await setAgentMonitoringState(agent.id, request.body.state)
-      if (!monitoring) return reply.code(409).send({ error: 'agent is not configured' })
-      return monitoring
     },
   )
 

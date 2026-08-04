@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
-import { AlertTriangle, ArrowLeft } from 'lucide-vue-next'
+import { AlertTriangle, ArrowLeft, LoaderCircle } from 'lucide-vue-next'
 import {
   SEGMENT_ACTION_LABELS,
   FINDING_TYPE_LABELS,
@@ -179,6 +179,49 @@ function shortInsight(insight: string) {
         </div>
       </div>
 
+      <div
+        v-if="call.ingestStatus === 'pending'"
+        class="flex items-start gap-3 rounded-lg border border-series/30 bg-series/5 px-4 py-3 text-sm"
+        role="status"
+        aria-live="polite"
+      >
+        <LoaderCircle class="mt-0.5 size-4 shrink-0 animate-spin text-series" aria-hidden="true" />
+        <div>
+          <p class="font-medium">This call is still being processed</p>
+          <p class="mt-0.5 text-ink-2">
+            Transcript metrics are available now. Quality analysis, scorecard results, and review flags will appear automatically.
+          </p>
+        </div>
+      </div>
+
+      <div
+        v-else-if="call.ingestStatus === 'failed'"
+        class="flex items-start gap-3 rounded-lg border border-critical/30 bg-critical/5 px-4 py-3 text-sm"
+        role="alert"
+      >
+        <AlertTriangle class="mt-0.5 size-4 shrink-0 text-critical" aria-hidden="true" />
+        <div>
+          <p class="font-medium text-critical">Call analysis failed</p>
+          <p class="mt-0.5 text-ink-2">{{ call.ingestError ?? 'The call could not be analyzed.' }}</p>
+        </div>
+      </div>
+
+      <div
+        v-else-if="call.ingestStatus === 'skipped'"
+        class="flex items-start gap-3 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm"
+        role="status"
+      >
+        <AlertTriangle class="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
+        <div>
+          <p class="font-medium">Some analysis is unavailable</p>
+          <p class="mt-0.5 text-ink-2">
+            {{ call.ingestError === 'no active scorecard'
+              ? 'This call predates always-on monitoring and will be analyzed automatically.'
+              : call.ingestError ?? 'The transcript did not contain enough information to analyze.' }}
+          </p>
+        </div>
+      </div>
+
       <!--
         Separate cards rather than one divided grid: each of these answers a
         different question, and boxing them together implied a relationship
@@ -286,7 +329,7 @@ function shortInsight(insight: string) {
 
         <div class="min-w-0 space-y-3 lg:sticky lg:top-4">
           <Card v-if="quality?.insights.length" title="Insights">
-            <ul class="space-y-1 text-sm text-ink-2">
+            <ul class="list-disc space-y-2 pl-4 text-sm text-ink-2">
               <li v-for="(insight, i) in quality.insights" :key="i">
                 {{ shortInsight(insight) }}
               </li>
@@ -294,7 +337,7 @@ function shortInsight(insight: string) {
           </Card>
 
           <Card v-if="quality?.scriptAdherence.missedSteps.length" title="Script gaps">
-            <ul class="space-y-1 text-sm text-ink-2">
+            <ul class="list-disc space-y-2 pl-4 text-sm text-ink-2">
               <li v-for="step in quality.scriptAdherence.missedSteps.slice(0, 3)" :key="step">
                 {{ step }}
               </li>
@@ -302,7 +345,7 @@ function shortInsight(insight: string) {
           </Card>
 
           <Card v-if="quality?.missedOpportunities.length" title="Opportunities">
-            <ul class="space-y-1 text-sm text-ink-2">
+            <ul class="list-disc space-y-2 pl-4 text-sm text-ink-2">
               <li v-for="missed in quality.missedOpportunities.slice(0, 2)" :key="missed.action">
                 <button
                   class="text-left hover:underline disabled:hover:no-underline"

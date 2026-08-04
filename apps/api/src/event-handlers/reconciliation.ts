@@ -13,7 +13,13 @@ export const reconcilePendingWork = inngestClient.createFunction(
   async ({ step }) => {
     const pending = await step.run('find-pending', async () => {
       const rows = await db.query.calls.findMany({
-        where: eq(calls.ingestStatus, 'pending'),
+        where: or(
+          eq(calls.ingestStatus, 'pending'),
+          and(
+            eq(calls.ingestStatus, 'skipped'),
+            eq(calls.ingestError, 'no active scorecard'),
+          ),
+        ),
         limit: 20,
         columns: { id: true },
       })
