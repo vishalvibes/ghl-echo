@@ -57,7 +57,13 @@ export function toCandidate(raw: Record<string, unknown>): CallCandidate | null 
     ghlCallId,
     ghlAgentId,
     contactName: str(raw.contactName) ?? str(raw.fullName),
-    contactPhone: str(raw.phone) ?? str(raw.contactPhone) ?? str(raw.from) ?? str(raw.to),
+    contactPhone:
+      str(raw.phone) ??
+      str(raw.contactPhone) ??
+      str(raw.fromNumber) ??
+      str(raw.toNumber) ??
+      str(raw.from) ??
+      str(raw.to),
     direction: String(raw.direction ?? '').toLowerCase() === 'outbound' ? 'outbound' : 'inbound',
     outcome: toOutcome(raw.status ?? raw.outcome ?? raw.callStatus),
     startedAt,

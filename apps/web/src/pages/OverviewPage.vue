@@ -91,7 +91,7 @@ const durationSeries: TrendSeries[] = [{ key: 'avgDurationSec', label: 'Average 
           <StatTile label="Avg duration" :value="duration(data.kpis.avgDurationSec)" />
           <StatTile label="Completion" :value="percentOrDash(latestMetrics?.completionRate ?? null)" />
           <StatTile label="Script score" :value="scoreOrDash(latestMetrics?.scriptAdherence ?? null)" />
-          <StatTile label="Open actions" :value="String(data.kpis.openActions)" />
+          <StatTile label="Positive sentiment" :value="percentOrDash(latestMetrics?.positiveSentimentRate ?? null)" />
         </div>
 
         <div class="grid gap-4 lg:grid-cols-2">
@@ -101,10 +101,17 @@ const durationSeries: TrendSeries[] = [{ key: 'avgDurationSec', label: 'Average 
           </Card>
 
           <MetricTrendCard
-            title="Call outcomes"
-            subtitle="Cumulative rates through each date"
+            title="Average call duration"
+            subtitle="Cumulative average through each date"
             :points="data.metricTrend"
-            :series="outcomeSeries"
+            :series="durationSeries"
+            format="duration"
+          />
+          <MetricTrendCard
+            title="Caller sentiment"
+            subtitle="Cumulative share of assessed calls"
+            :points="data.metricTrend"
+            :series="sentimentSeries"
             :max="1"
             format="percent"
           />
@@ -126,19 +133,12 @@ const durationSeries: TrendSeries[] = [{ key: 'avgDurationSec', label: 'Average 
             format="percent"
           />
           <MetricTrendCard
-            title="Caller sentiment"
-            subtitle="Cumulative share of assessed calls"
+            title="Call outcomes"
+            subtitle="Cumulative rates through each date"
             :points="data.metricTrend"
-            :series="sentimentSeries"
+            :series="outcomeSeries"
             :max="1"
             format="percent"
-          />
-          <MetricTrendCard
-            title="Average call duration"
-            subtitle="Cumulative average through each date"
-            :points="data.metricTrend"
-            :series="durationSeries"
-            format="duration"
           />
         </div>
       </template>
