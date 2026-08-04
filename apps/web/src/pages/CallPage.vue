@@ -5,6 +5,7 @@ import { AlertTriangle, ArrowLeft, LoaderCircle } from 'lucide-vue-next'
 import {
   SEGMENT_ACTION_LABELS,
   FINDING_TYPE_LABELS,
+  VERDICT_LABELS,
 } from '@copilot/shared'
 import { useCall, useUpdateAction } from '../composables/queries.js'
 import { dateTime, duration, turnStamp } from '../lib/format.js'
@@ -73,6 +74,17 @@ const flaggedTurns = computed(() => ({
  * read — it costs a model call — so the panel simply hides when it is absent.
  */
 const quality = computed(() => call.value?.quality ?? null)
+
+const criteriaSubtitle = computed(() => {
+  const evaluation = call.value?.evaluation
+  if (!evaluation) return undefined
+  return `${VERDICT_LABELS[evaluation.verdict]} · ${evaluation.overallScore}/100 · scorecard v${evaluation.scorecardVersion}`
+})
+
+function criterionValue(value: number | string | null) {
+  if (value === null) return ''
+  return typeof value === 'number' ? `${value}/5` : value
+}
 
 /**
  * Headline numbers as data rather than near-identical blocks of markup. Some
@@ -278,7 +290,6 @@ function shortInsight(insight: string) {
                         ? 'rounded-bl-sm bg-plane text-ink'
                         : 'bg-transparent text-ink-3 italic',
                     highlighted.has(turn.id) ? 'ring-2 ring-series ring-offset-2 ring-offset-surface' : '',
-                    reviewFlagTurns.has(turn.id) ? 'ring-2 ring-warning ring-offset-2 ring-offset-surface' : '',
                   ]"
                 >
                   {{ turn.text }}
@@ -328,6 +339,41 @@ function shortInsight(insight: string) {
         </Card>
 
         <div class="min-w-0 space-y-3 lg:sticky lg:top-4">
+          <Card
+            v-if="call.evaluation?.criteria.length"
+            title="Criteria"
+            :subtitle="criteriaSubtitle"
+          >
+            <ul class="divide-y divide-hairline">
+              <li
+                v-for="criterion in call.evaluation.criteria"
+                :key="criterion.key"
+                class="py-2 first:pt-0 last:pb-0"
+              >
+                <button
+                  class="flex w-full items-center justify-between gap-3 text-left disabled:cursor-default"
+                  :disabled="criterion.evidenceTurnIds.length === 0"
+                  @click="focusTurns(criterion.evidenceTurnIds)"
+                >
+                  <span class="min-w-0 truncate font-medium">{{ criterion.label }}</span>
+                  <span class="flex shrink-0 items-center gap-2">
+                    <span v-if="criterion.value !== null" class="text-sm text-ink-3">
+                      {{ criterionValue(criterion.value) }}
+                    </span>
+                    <span
+                      class="rounded-full border px-2 py-0.5 text-sm font-medium"
+                      :class="criterion.met
+                        ? 'border-good/30 bg-good/10 text-good-text'
+                        : 'border-critical/30 bg-critical/5 text-critical'"
+                    >
+                      {{ criterion.met ? 'Passed' : 'Failed' }}
+                    </span>
+                  </span>
+                </button>
+              </li>
+            </ul>
+          </Card>
+
           <Card v-if="quality?.insights.length" title="Insights">
             <ul class="list-disc space-y-2 pl-4 text-sm text-ink-2">
               <li v-for="(insight, i) in quality.insights" :key="i">
@@ -412,6 +458,18 @@ function shortInsight(insight: string) {
                 </div>
               </li>
             </ul>
+          </Card>
+
+          <Card v-if="!call.evaluation?.criteria.length" title="Criteria">
+            <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
+              <span class="text-ink-2">No criteria results for {{ call.agentName }}.</span>
+              <RouterLink
+                :to="{ name: 'agent-settings', query: { agentId: call.agentId } }"
+                class="font-medium text-series hover:underline"
+              >
+                Add criteria
+              </RouterLink>
+            </div>
           </Card>
         </div>
       </div>

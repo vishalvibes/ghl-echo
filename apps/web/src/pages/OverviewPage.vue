@@ -91,14 +91,6 @@ const durationSeries: TrendSeries[] = [{ key: 'avgDurationSec', label: 'Average 
         <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
           <StatTile label="Calls" :value="String(data.kpis.calls)" />
           <StatTile label="Evaluated calls" :value="String(data.kpis.evaluatedCalls)" />
-          <template v-if="data.kpis.evaluatedCalls > 0">
-            <StatTile
-              label="Pass rate"
-              :value="pct(data.kpis.passRate)"
-              :delta-pts="Math.round(data.kpis.passRateDelta * 100)"
-            />
-            <StatTile label="Fail rate" :value="pct(data.kpis.failRate)" invert />
-          </template>
           <StatTile label="Open review flags" :value="String(data.kpis.openActions)" />
           <StatTile label="Avg duration" :value="duration(data.kpis.avgDurationSec)" />
           <StatTile label="Completion" :value="percentOrDash(latestMetrics?.completionRate ?? null)" />

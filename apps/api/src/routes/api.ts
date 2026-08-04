@@ -94,7 +94,13 @@ export const apiRoutes: FastifyPluginAsyncZod = async (app) => {
       computeKpis(scope, window),
       computeTrend(scope, window),
       computeMetricTrend(scope, window),
-      computeFailureModes(scope, window),
+      computeFailureModes(scope, window).catch((error) => {
+        // Failure modes are a supporting view. A malformed legacy quality row
+        // or a partially migrated projection must not take down every KPI and
+        // chart on the overview page.
+        request.log.error({ err: error }, 'failure-mode aggregation failed')
+        return []
+      }),
       computeAgentSummaries(scope.locationId, window),
     ])
     return { window, kpis, trend, metricTrend, failureModes, agents: agentSummaries }
