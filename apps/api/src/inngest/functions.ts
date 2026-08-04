@@ -1,12 +1,18 @@
-import { eq } from 'drizzle-orm'
+import { and, eq, inArray, isNotNull, lt, or } from 'drizzle-orm'
 import { NonRetriableError } from 'inngest'
 import { db } from '../db/client.js'
-import { calls, locations } from '../db/schema.js'
+import { calls, locations, webhookEvents } from '../db/schema.js'
 import { evaluateCall } from '../ingest/evaluate.js'
 import { ingestCallFromGhl, listBackfillCandidates } from '../ingest/ghl-ingest.js'
 import { assessQualityCall } from '../ingest/quality.js'
 import { LlmDisabledError } from '../lib/llm.js'
-import { EVENT_BACKFILL_REQUESTED, EVENT_TRANSCRIPT_RECEIVED, inngest } from './client.js'
+import {
+  EVENT_BACKFILL_REQUESTED,
+  EVENT_TRANSCRIPT_RECEIVED,
+  EVENT_WEBHOOK_RECEIVED,
+  inngest,
+} from './client.js'
+import { processWebhookFn } from './process-webhook.js'
 
 /** Process one call through durable, independently retryable stages. */
 export const processCallFn = inngest.createFunction(
@@ -106,7 +112,7 @@ export const backfillFn = inngest.createFunction(
   },
 )
 
-/** Re-check any call stuck in pending — safety net for missed events. */
+/** Safety net for missed event sends and work interrupted mid-processing. */
 export const sweepPendingFn = inngest.createFunction(
   { id: 'sweep-pending-calls', retries: 1, triggers: [{ cron: '*/15 * * * *' }] },
   async ({ step }) => {
@@ -124,8 +130,51 @@ export const sweepPendingFn = inngest.createFunction(
         pending.map((callId) => ({ name: EVENT_TRANSCRIPT_RECEIVED, data: { callId } })),
       )
     }
-    return { requeued: pending.length }
+
+    const webhookEventIds = await step.run('find-recoverable-webhooks', async () => {
+      const staleBefore = new Date(Date.now() - 30 * 60 * 1000)
+      const rows = await db
+        .select({ id: webhookEvents.id })
+        .from(webhookEvents)
+        .innerJoin(locations, eq(locations.id, webhookEvents.locationId))
+        .where(
+          or(
+            eq(webhookEvents.status, 'pending'),
+            and(
+              eq(webhookEvents.status, 'waiting_authorization'),
+              isNotNull(locations.accessToken),
+              isNotNull(locations.refreshToken),
+            ),
+            and(
+              eq(webhookEvents.status, 'processing'),
+              lt(webhookEvents.updatedAt, staleBefore),
+            ),
+          ),
+        )
+        .limit(100)
+
+      const ids = rows.map((row) => row.id)
+      if (ids.length > 0) {
+        await db
+          .update(webhookEvents)
+          .set({ status: 'pending', error: null, updatedAt: new Date() })
+          .where(inArray(webhookEvents.id, ids))
+      }
+      return ids
+    })
+
+    if (webhookEventIds.length > 0) {
+      await step.sendEvent(
+        'requeue-webhooks',
+        webhookEventIds.map((webhookEventId) => ({
+          name: EVENT_WEBHOOK_RECEIVED,
+          data: { webhookEventId },
+        })),
+      )
+    }
+
+    return { callsRequeued: pending.length, webhooksRequeued: webhookEventIds.length }
   },
 )
 
-export const functions = [processCallFn, backfillFn, sweepPendingFn]
+export const functions = [processWebhookFn, processCallFn, backfillFn, sweepPendingFn]

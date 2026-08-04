@@ -1,5 +1,8 @@
 .DEFAULT_GOAL := help
-.PHONY: help dev stop ps urls up down reset status install api web inngest seed test test-api test-web test-shared check migrate
+.PHONY: help dev stop ps urls up down reset status install reinstall api web inngest seed test test-api test-web test-shared check migrate
+
+# Always operate from the repo root — never `pnpm install` inside apps/* or packages/*.
+ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -39,17 +42,24 @@ seed: ## Seed demo agents, calls and evaluations (idempotent)
 	pnpm --filter @copilot/api seed
 
 # --- App ---
-install: ## Install all workspace deps
-	pnpm install
+# pnpm workspace: one install at the repo root. apps/*/node_modules and
+# packages/*/node_modules are symlink stubs into the shared store — expected,
+# not duplicate installs. Never run pnpm/npm install inside those folders.
+install: ## Install all workspace deps (from repo root only)
+	cd $(ROOT) && pnpm install
+
+reinstall: ## Wipe every node_modules then reinstall from root
+	cd $(ROOT) && rm -rf node_modules apps/*/node_modules packages/*/node_modules
+	cd $(ROOT) && pnpm install
 
 api: ## Run the Fastify API on :8000
-	pnpm --filter @copilot/api dev
+	cd $(ROOT) && pnpm --filter @copilot/api dev
 
 web: ## Run the Vue dashboard on :5173
-	pnpm --filter @copilot/web dev
+	cd $(ROOT) && pnpm --filter @copilot/web dev
 
 inngest: ## Run the Inngest Dev Server on :8288 (also serves the MCP endpoint)
-	npx inngest-cli@latest dev -l warn -u http://localhost:8000/api/inngest
+	cd $(ROOT) && npx inngest-cli@latest dev -l warn -u http://localhost:8000/api/inngest
 
 # --- Tests / checks ---
 test: ## Run all workspace unit tests

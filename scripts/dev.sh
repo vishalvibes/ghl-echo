@@ -63,6 +63,14 @@ check_deps() {
   fi
   success "All dependencies present"
 
+  # Workspace deps must be installed from the repo root (make install), never
+  # from apps/* — per-app node_modules folders are pnpm symlink stubs.
+  if [ ! -d "$REPO_ROOT/node_modules" ]; then
+    step "Workspace deps missing — running pnpm install at repo root..."
+    ( cd "$REPO_ROOT" && pnpm install ) || die "pnpm install failed — run 'make install'"
+    success "Workspace deps installed"
+  fi
+
   [ -f "$REPO_ROOT/apps/api/.env" ] || \
     warn "apps/api/.env is missing — run 'cp apps/api/.env.example apps/api/.env' (defaults work for fixture mode)"
 }
@@ -153,7 +161,7 @@ cmd_dev() {
   # Pane 2: Inngest Dev Server (also serves the MCP endpoint on :8288)
   tmux select-pane -t 0
   tmux split-window -v -t "$SESSION" -c "$REPO_ROOT" \
-    "npx inngest-cli@latest dev -l warn -u http://localhost:8000/api/inngest"
+    "npx --yes inngest-cli@latest dev -l warn -u http://localhost:8000/api/inngest"
   # Pane 3: dashboard
   tmux select-pane -t 2
   tmux split-window -v -t "$SESSION" "bash $dash"

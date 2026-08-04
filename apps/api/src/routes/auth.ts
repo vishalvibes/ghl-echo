@@ -8,6 +8,7 @@ import { locations } from '../db/schema.js'
 import { exchangeAuthCode, resolveLocationToken, storeTokens } from '../ghl/client.js'
 import { decryptSsoPayload } from '../ghl/crypto.js'
 import { inngest } from '../inngest/client.js'
+import { replayWaitingWebhookEvents } from '../inngest/webhook-inbox.js'
 import { issueSession, readSession, SESSION_COOKIE } from '../lib/session.js'
 
 function safeEqual(a: string, b: string): boolean {
@@ -36,12 +37,24 @@ export const authRoutes: FastifyPluginAsyncZod = async (app) => {
       const location = await storeTokens(tokens.locationId, tokens)
 
       try {
+        await replayWaitingWebhookEvents(location.id)
+      } catch (error) {
+        // Rows are already pending in Postgres and the sweep will resend them.
+        request.log.error({ err: error }, 'post-install webhook replay failed')
+      }
+
+      try {
         await syncAgentsForLocation(location)
+      } catch (error) {
+        request.log.error({ err: error }, 'post-install agent sync failed')
+      }
+
+      try {
         await inngest.send({ name: 'agent/backfill.requested', data: { locationId: location.id } })
       } catch (error) {
-        // Install must not fail because a follow-up sync did — log and let
-        // the user retrigger from settings.
-        request.log.error({ err: error }, 'post-install sync failed')
+        // Install must not fail because reconciliation could not be queued.
+        // Live webhooks remain durable; the failure is visible in logs.
+        request.log.error({ err: error }, 'post-install backfill dispatch failed')
       }
 
       await issueSession(

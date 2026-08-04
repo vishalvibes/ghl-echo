@@ -38,6 +38,13 @@ export const ingestStatusEnum = pgEnum('ingest_status', [
   'skipped',
   'failed',
 ])
+export const webhookEventStatusEnum = pgEnum('webhook_event_status', [
+  'pending',
+  'processing',
+  'waiting_authorization',
+  'processed',
+  'failed',
+])
 
 // --- Tenancy ----------------------------------------------------------------
 
@@ -55,6 +62,51 @@ export const locations = pgTable('locations', {
   installedAt: timestamp('installed_at', { withTimezone: true }).notNull().defaultNow(),
   uninstalledAt: timestamp('uninstalled_at', { withTimezone: true }),
 })
+
+/**
+ * Durable inbox for signed provider webhooks. Persisting before sending an
+ * Inngest event closes the delivery gap between the HTTP acknowledgement and
+ * asynchronous processing; the recovery sweep can resend any stranded row.
+ */
+export const webhookEvents = pgTable(
+  'webhook_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    locationId: uuid('location_id')
+      .notNull()
+      .references(() => locations.id, { onDelete: 'cascade' }),
+    providerEventId: varchar('provider_event_id', { length: 128 }).notNull(),
+    eventType: varchar('event_type', { length: 64 }).notNull(),
+    payload: jsonb('payload').$type<Record<string, unknown>>().notNull(),
+    status: webhookEventStatusEnum('status').notNull().default('pending'),
+    attempts: integer('attempts').notNull().default(0),
+    error: text('error'),
+    receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    processedAt: timestamp('processed_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('webhook_events_delivery_idx').on(
+      t.locationId,
+      t.eventType,
+      t.providerEventId,
+    ),
+    index('webhook_events_status_received_idx').on(t.status, t.receivedAt),
+    index('webhook_events_location_provider_idx').on(
+      t.locationId,
+      t.providerEventId,
+      t.receivedAt.desc(),
+    ),
+    index('webhook_events_location_status_idx').on(
+      t.locationId,
+      t.status,
+      t.receivedAt,
+    ),
+    index('webhook_events_processing_updated_idx')
+      .on(t.updatedAt)
+      .where(sql`${t.status} = 'processing'`),
+  ],
+)
 
 // --- Agents & scorecards ----------------------------------------------------
 
@@ -195,6 +247,9 @@ export const calls = pgTable(
     uniqueIndex('calls_location_ghl_call_idx').on(t.locationId, t.ghlCallId),
     index('calls_agent_started_idx').on(t.agentId, t.startedAt.desc()),
     index('calls_location_started_idx').on(t.locationId, t.startedAt.desc()),
+    index('calls_pending_idx')
+      .on(t.id)
+      .where(sql`${t.ingestStatus} = 'pending'`),
   ],
 )
 
@@ -290,7 +345,12 @@ export const findings = pgTable(
     turnIds: jsonb('turn_ids').$type<number[]>().notNull().default(sql`'[]'::jsonb`),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index('findings_agent_type_idx').on(t.agentId, t.type, t.createdAt.desc())],
+  (t) => [
+    index('findings_agent_type_idx').on(t.agentId, t.type, t.createdAt.desc()),
+    index('findings_location_created_idx').on(t.locationId, t.createdAt.desc(), t.type),
+    index('findings_call_idx').on(t.callId, t.createdAt.desc()),
+    index('findings_evaluation_idx').on(t.evaluationId),
+  ],
 )
 
 /** "Use Actions": spans of a call that need a human. The daily work queue. */
@@ -319,7 +379,11 @@ export const callActions = pgTable(
     resolvedAt: timestamp('resolved_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index('call_actions_location_status_idx').on(t.locationId, t.status, t.createdAt.desc())],
+  (t) => [
+    index('call_actions_location_status_idx').on(t.locationId, t.status, t.createdAt.desc()),
+    index('call_actions_call_status_idx').on(t.callId, t.status),
+    index('call_actions_evaluation_idx').on(t.evaluationId),
+  ],
 )
 
 // --- Recommendations --------------------------------------------------------
@@ -351,6 +415,14 @@ export const recommendations = pgTable(
 export const locationsRelations = relations(locations, ({ many }) => ({
   agents: many(agents),
   calls: many(calls),
+  webhookEvents: many(webhookEvents),
+}))
+
+export const webhookEventsRelations = relations(webhookEvents, ({ one }) => ({
+  location: one(locations, {
+    fields: [webhookEvents.locationId],
+    references: [locations.id],
+  }),
 }))
 
 export const agentsRelations = relations(agents, ({ one, many }) => ({
@@ -396,3 +468,4 @@ export type AgentRow = typeof agents.$inferSelect
 export type ScorecardRow = typeof scorecards.$inferSelect
 export type LocationRow = typeof locations.$inferSelect
 export type EvaluationRow = typeof evaluations.$inferSelect
+export type WebhookEventRow = typeof webhookEvents.$inferSelect

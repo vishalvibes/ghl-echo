@@ -95,21 +95,19 @@ const durationSeries: TrendSeries[] = [{ key: 'avgDurationSec', label: 'Average 
         </div>
 
         <div class="grid gap-4 lg:grid-cols-2">
-          <Card title="Call volume" subtitle="Calls received in the selected window" :flush="!callVolumePoints.length">
+          <Card title="Call volume" :header-divider="false" :flush="!callVolumePoints.length">
             <AreaChart v-if="callVolumePoints.length" :points="callVolumePoints" aria-label="Call volume over time" />
             <p v-else class="py-2 text-center text-xs text-ink-3">No data yet</p>
           </Card>
 
           <MetricTrendCard
             title="Average call duration"
-            subtitle="Cumulative average through each date"
             :points="data.metricTrend"
             :series="durationSeries"
             format="duration"
           />
           <MetricTrendCard
             title="Caller sentiment"
-            subtitle="Cumulative share of assessed calls"
             :points="data.metricTrend"
             :series="sentimentSeries"
             :max="1"
@@ -117,7 +115,6 @@ const durationSeries: TrendSeries[] = [{ key: 'avgDurationSec', label: 'Average 
           />
           <MetricTrendCard
             title="Quality ratings"
-            subtitle="Cumulative averages from assessed calls"
             :points="data.metricTrend"
             :series="qualitySeries"
             :min="1"
@@ -126,7 +123,6 @@ const durationSeries: TrendSeries[] = [{ key: 'avgDurationSec', label: 'Average 
           />
           <MetricTrendCard
             title="Conversation signals"
-            subtitle="Cumulative transcript-derived rates"
             :points="data.metricTrend"
             :series="mechanicsSeries"
             :max="1"
@@ -134,7 +130,6 @@ const durationSeries: TrendSeries[] = [{ key: 'avgDurationSec', label: 'Average 
           />
           <MetricTrendCard
             title="Call outcomes"
-            subtitle="Cumulative rates through each date"
             :points="data.metricTrend"
             :series="outcomeSeries"
             :max="1"

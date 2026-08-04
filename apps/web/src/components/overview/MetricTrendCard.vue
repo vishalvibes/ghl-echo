@@ -21,7 +21,6 @@ interface SeriesDefinition {
 
 const props = withDefaults(defineProps<{
   title: string
-  subtitle: string
   points: CallMetricTrendPoint[]
   series: SeriesDefinition[]
   min?: number
@@ -40,7 +39,7 @@ const hasData = computed(() => chartPoints.value.some((point) => point.values.so
 </script>
 
 <template>
-  <Card :title="title" :subtitle="subtitle" :flush="!hasData">
+  <Card :title="title" :header-divider="false" :flush="!hasData">
     <MetricLineChart
       v-if="hasData"
       :points="chartPoints"

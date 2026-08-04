@@ -84,7 +84,8 @@ pnpm workspace monorepo (Node 22+, TypeScript, ESM everywhere):
 
 ## Commands
 
-- `make dev` — **one command for everything** (`scripts/dev.sh`): Supabase + API + web + Inngest Dev Server in one tmux session, plus idempotent demo seed. `make stop` / `make ps` / `make urls`. Needs Docker + tmux.
+- `make install` — **only** install entrypoint (`pnpm install` at repo root). Never run pnpm/npm install inside `apps/*` or `packages/*`; those `node_modules/` folders are pnpm symlink stubs. `make reinstall` wipes all of them and reinstalls.
+- `make dev` — **one command for everything** (`scripts/dev.sh`): Supabase + API + web + Inngest Dev Server in one tmux session, plus idempotent demo seed. Auto-runs `pnpm install` if root `node_modules` is missing. `make stop` / `make ps` / `make urls`. Needs Docker + tmux.
 - `make up` / `make down` — local Supabase only. `make status` — URLs/keys.
 - `make reset` — migrations + demo reseed. `make seed` — reseed only.
 - `make api` (:8000) / `make web` (:5173) / `make inngest` (:8288) — individual services.

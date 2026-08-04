@@ -201,22 +201,16 @@ function shortInsight(insight: string) {
       </p>
 
       <!--
-        Horizontal flex + gap: transcript keeps a fixed chat width so bubbles
-        stay put; the evidence column is flex-1 and eats everything left of the
-        right edge (Insights, Script gaps, Findings, …).
+        Same gap-3 + full width as the metric tiles above so the two columns
+        bisect on the same center line as the 4-up card grid.
       -->
-      <div class="flex flex-col items-stretch gap-4 lg:flex-row lg:items-start">
+      <div class="grid grid-cols-1 gap-3 lg:grid-cols-2 lg:items-start">
         <!--
           Laid out as a chat: caller right, agent left, one bubble per turn.
-          A phone call *is* a conversation, and the previous table-like layout
-          made the reader reconstruct that from role labels. Timestamp and any
-          mechanics flags hang off the bubble rather than sitting inside it, so
-          the message stays the message.
-
           flush + padding inside the scroller: Card body padding below a
           max-height viewport read as empty space under a clipped last turn.
         -->
-        <Card title="Transcript" class="w-full min-w-0 lg:w-[36rem] lg:max-w-[36rem] lg:shrink-0" flush>
+        <Card title="Transcript" class="min-w-0" flush>
           <div class="max-h-[34rem] overflow-y-auto px-4 py-4">
             <EmptyState v-if="call.transcript.length === 0" title="No transcript on this call" />
             <ol v-else class="space-y-3">
@@ -285,8 +279,7 @@ function shortInsight(insight: string) {
           </div>
         </Card>
 
-        <!-- Evidence column: fills remaining width beside the transcript -->
-        <div class="min-w-0 w-full flex-1 space-y-4 lg:sticky lg:top-4">
+        <div class="min-w-0 space-y-3 lg:sticky lg:top-4">
           <Card v-if="quality?.insights.length" title="Insights">
             <ul class="space-y-1 text-sm text-ink-2">
               <li v-for="(insight, i) in quality.insights" :key="i">

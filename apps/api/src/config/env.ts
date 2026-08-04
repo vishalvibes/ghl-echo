@@ -60,6 +60,14 @@ const envSchema = z.object({
     .string()
     .default('false')
     .transform((v) => v === 'true' || v === '1'),
+  GHL_ED25519_PUBLIC_KEY: z
+    .string()
+    .default('')
+    .transform((value) => value.replaceAll('\\n', '\n')),
+  GHL_RSA_PUBLIC_KEY: z
+    .string()
+    .default('')
+    .transform((value) => value.replaceAll('\\n', '\n')),
   /** App's Shared Secret (Manage > Secrets) — decrypts Custom Page SSO postMessage payloads. */
   GHL_SSO_KEY: z.string().default(''),
 
@@ -100,6 +108,15 @@ function load(): Env {
   }
 
   const env = parsed.data
+  if (env.GHL_VERIFY_WEBHOOKS) {
+    const missingKeys = [
+      !env.GHL_ED25519_PUBLIC_KEY ? 'GHL_ED25519_PUBLIC_KEY' : null,
+      !env.GHL_RSA_PUBLIC_KEY ? 'GHL_RSA_PUBLIC_KEY' : null,
+    ].filter((key): key is string => key !== null)
+    if (missingKeys.length > 0) {
+      throw new Error(`Webhook verification requires: ${missingKeys.join(', ')}`)
+    }
+  }
   if (env.NODE_ENV === 'production') {
     const insecure: string[] = []
     if (env.SESSION_SECRET.startsWith('dev-only')) insecure.push('SESSION_SECRET')

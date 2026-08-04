@@ -1,0 +1,20 @@
+[Unit]
+Description=Echo API
+After=network-online.target postgresql.service echo-inngest.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ec2-user
+Group=ec2-user
+WorkingDirectory=/home/ec2-user/echo/apps/api
+EnvironmentFile=/home/ec2-user/echo/apps/api/.env
+ExecStart=/usr/bin/node --experimental-strip-types src/main.ts
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

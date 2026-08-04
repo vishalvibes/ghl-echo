@@ -1,0 +1,20 @@
+[Unit]
+Description=Echo Inngest server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ec2-user
+Group=ec2-user
+WorkingDirectory=/home/ec2-user/echo
+EnvironmentFile=/home/ec2-user/echo/apps/api/.env
+ExecStart=/usr/local/bin/inngest start --no-ui --poll-interval 60 --sdk-url http://127.0.0.1:8000/api/inngest --sqlite-dir /var/lib/echo/inngest
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+NoNewPrivileges=true
+ReadWritePaths=/var/lib/echo/inngest
+
+[Install]
+WantedBy=multi-user.target

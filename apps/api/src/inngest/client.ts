@@ -7,9 +7,11 @@ import { env } from '../config/env.js'
  * event typing, so the payload shapes are documented here and cast at the
  * function boundary.
  *
+ *   call/webhook.received      { webhookEventId: string }
  *   call/transcript.received   { callId: string }
  *   agent/backfill.requested   { locationId: string; agentId?: string }
  */
+export const EVENT_WEBHOOK_RECEIVED = 'call/webhook.received'
 export const EVENT_TRANSCRIPT_RECEIVED = 'call/transcript.received'
 export const EVENT_BACKFILL_REQUESTED = 'agent/backfill.requested'
 

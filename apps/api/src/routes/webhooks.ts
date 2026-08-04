@@ -3,18 +3,17 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod'
 import { eq } from 'drizzle-orm'
 import { env } from '../config/env.js'
 import { db } from '../db/client.js'
-import { locations } from '../db/schema.js'
-import { ingestCallFromGhl, toCandidate } from '../ingest/ghl-ingest.js'
-import { inngest } from '../inngest/client.js'
+import { locations, webhookEvents } from '../db/schema.js'
+import { toCandidate } from '../ingest/ghl-ingest.js'
+import { sendWebhookEvents, VOICE_CALL_EVENT_TYPE } from '../inngest/webhook-inbox.js'
 
 /**
  * Inbound webhook from HighLevel, fired when a Voice AI call completes.
  *
  * Contract with GHL: answer 200 fast or get retried. So the handler does the
- * minimum — verify, dedupe-insert the call as pending, emit one Inngest event
- * — and the LLM work happens in the worker. At-least-once delivery is handled
- * by the unique (location, ghl_call_id) index; a duplicate insert is a no-op
- * and no second event is sent.
+ * minimum — verify, persist the delivery in a durable inbox, and emit one
+ * Inngest event. The inbox unique key handles retries; its status lets the
+ * recovery sweep repair a failed event send or a pre-OAuth delivery.
  */
 
 /**
@@ -27,24 +26,10 @@ import { inngest } from '../inngest/client.js'
  *
  * Docs: https://marketplace.gohighlevel.com/docs/webhook/WebhookIntegrationGuide/
  */
-const GHL_ED25519_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
-MCowBQYDK2VwAyEAi2HR1srL4o18O8BRa7gVJY7G7bupbN3H9AwJrHCDiOg=
------END PUBLIC KEY-----`
-
-const GHL_RSA_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
-MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAokvo/r9tVgcfZ5DysOSC
-Frm602qYV0MaAiNnX9O8KxMbiyRKWeL9JpCpVpt4XHIcBOK4u3cLSqJGOLaPuXw6
-dO0t6Q/ZVdAV5Phz+ZtzPL16iCGeK9po6D6JHBpbi989mmzMryUnQJezlYJ3DVfB
-csedpinheNnyYeFXolrJvcsjDtfAeRx5ByHQmTnSdFUzuAnC9/GepgLT9SM4nCpv
-uxmZMxrJt5Rw+VUaQ9B8JSvbMPpez4peKaJPZHBbU3OdeCVx5klVXXZQGNHOs8gF
-3kvoV5rTnXV0IknLBXlcKKAQLZcY/Q9rG6Ifi9c+5vqlvHPCUJFT5XUGG5RKgOKU
-J062fRtN+rLYZUV+BjafxQauvC8wSWeYja63VSUruvmNj8xkx2zE/Juc+yjLjTXp
-IocmaiFeAO6fUtNjDeFVkhf5LNb59vECyrHD2SQIrhgXpO4Q3dVNA5rw576PwTzN
-h/AMfHKIjE4xQA1SZuYJmNnmVZLIZBlQAF9Ntd03rfadZ+yDiOXCCs9FkHibELhC
-HULgCsnuDJHcrGNd5/Ddm5hxGQ0ASitgHeMZ0kcIOwKDOzOU53lDza6/Y09T7sYJ
-PQe7z0cvj7aE4B+Ax1ZoZGPzpJlZtGXCsu9aTEGEnKzmsFqwcSsnw3JB31IGKAyk
-T1hhTiaCeIY/OwwwNUY2yvcCAwEAAQ==
------END PUBLIC KEY-----`
+const ghlEd25519PublicKey = env.GHL_VERIFY_WEBHOOKS
+  ? createPublicKey(env.GHL_ED25519_PUBLIC_KEY)
+  : null
+const ghlRsaPublicKey = env.GHL_VERIFY_WEBHOOKS ? createPublicKey(env.GHL_RSA_PUBLIC_KEY) : null
 
 function header(value: string | string[] | undefined): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined
@@ -69,7 +54,7 @@ function verifyWebhook(
       return verifySignatureBytes(
         null,
         body,
-        createPublicKey(GHL_ED25519_PUBLIC_KEY),
+        ghlEd25519PublicKey!,
         Buffer.from(headers.ed25519, 'base64'),
       )
     }
@@ -77,7 +62,7 @@ function verifyWebhook(
       return verifySignatureBytes(
         'sha256',
         body,
-        createPublicKey(GHL_RSA_PUBLIC_KEY),
+        ghlRsaPublicKey!,
         Buffer.from(headers.rsa, 'base64'),
       )
     }
@@ -147,36 +132,54 @@ export const webhookRoutes: FastifyPluginAsyncZod = async (app) => {
           return { ok: true, ignored: 'location not installed' }
         }
 
-        if (!location.accessToken || !location.refreshToken) {
-          // A signed webhook can arrive before OAuth finishes, or after a
-          // local database reset. Keep the tenant so SSO/OAuth can enrich this
-          // same row; the install backfill will recover this call afterward.
-          request.log.warn(
-            { ghlLocationId },
-            'location discovered but awaiting OAuth authorization',
-          )
-          return { ok: true, accepted: true, pendingAuthorization: true }
-        }
-
         const candidate = toCandidate(payload)
         if (!candidate) {
           request.log.warn({ keys: Object.keys(payload) }, 'webhook payload not mappable to a call')
           return { ok: true, ignored: 'payload not mappable' }
         }
 
-        const callId = await ingestCallFromGhl(location, candidate)
-        if (callId) {
-          await inngest.send({ name: 'call/transcript.received', data: { callId } })
-        } else {
-          // Either a duplicate delivery or an agent id GHL cannot account for.
-          // Both answer 200, so say which in the log — they are otherwise
-          // indistinguishable from a successful ingest.
-          request.log.info(
-            { ghlCallId: candidate.ghlCallId, ghlAgentId: candidate.ghlAgentId },
-            'webhook call not ingested (already stored, or unknown agent)',
+        const authorized = Boolean(location.accessToken && location.refreshToken)
+        const [stored] = await db
+          .insert(webhookEvents)
+          .values({
+            locationId: location.id,
+            providerEventId: candidate.ghlCallId,
+            eventType: VOICE_CALL_EVENT_TYPE,
+            payload,
+            status: authorized ? 'pending' : 'waiting_authorization',
+          })
+          .onConflictDoNothing({
+            target: [
+              webhookEvents.locationId,
+              webhookEvents.eventType,
+              webhookEvents.providerEventId,
+            ],
+          })
+          .returning({ id: webhookEvents.id })
+
+        if (!stored) {
+          return { ok: true, duplicate: true }
+        }
+
+        if (!authorized) {
+          request.log.warn(
+            { ghlLocationId, webhookEventId: stored.id },
+            'webhook persisted while location awaits OAuth authorization',
+          )
+          return { ok: true, accepted: true, pendingAuthorization: true }
+        }
+
+        try {
+          await sendWebhookEvents([stored.id])
+        } catch (error) {
+          // The delivery is already durable. A 2xx prevents needless provider
+          // retries, while the scheduled sweep will resend this pending row.
+          request.log.error(
+            { err: error, webhookEventId: stored.id },
+            'webhook persisted but Inngest dispatch failed',
           )
         }
-        return { ok: true, ingested: callId !== null }
+        return { ok: true, accepted: true }
       },
     )
   }

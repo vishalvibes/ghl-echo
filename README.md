@@ -27,10 +27,14 @@ GHL call ends ──webhook──▶ API ──queue──▶ LLM judge ──�
 ## Quick start
 
 ```bash
-make install        # pnpm install
+make install        # pnpm install at repo root (never inside apps/*)
 cp apps/api/.env.example apps/api/.env    # defaults work for fixture mode
 make dev            # Supabase + API + dashboard + Inngest in one tmux session
 ```
+
+`make install` is the only install entrypoint. App-level `node_modules/` folders
+are pnpm symlink stubs into the shared root store — not duplicate installs.
+Use `make reinstall` for a clean wipe + reinstall.
 
 `make dev` seeds a **demo location** — three reference agents with handcrafted
 calls and evaluations — so the full dashboard works with **no HighLevel account
@@ -82,3 +86,19 @@ OPENAI_API_KEY=sk-...
    every read to that location.
 4. Point the app's call-completed webhook at `<your-host>/webhooks/ghl`.
    Install triggers an automatic backfill of historical call logs.
+
+## EC2 deployment
+
+The production host runs four isolated services: PostgreSQL, the Fastify API,
+the self-hosted Inngest server, and Nginx serving the Vue build. Templates live
+in `deploy/ec2/`; application secrets stay in the ignored `apps/api/.env`.
+
+After pulling a release on the host:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm --filter @copilot/web build
+set -a; source apps/api/.env; set +a
+./scripts/migrate-production.sh
+sudo systemctl restart echo-inngest echo-api nginx
+```
