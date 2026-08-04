@@ -59,7 +59,12 @@ export async function logout(): Promise<void> {
 
 /** Establish a session from the GHL iframe context, if we are embedded. */
 export async function bootstrapGhlSession(): Promise<void> {
-  if (window === window.parent) return // not iframed — dev fallback will kick in
+  if (window === window.parent) {
+    if (import.meta.env.DEV) {
+      await fetch('/auth/dev-session', { method: 'POST', credentials: 'include' })
+    }
+    return
+  }
   try {
     // GHL Custom Pages hand back an *encrypted* payload via
     // REQUEST_USER_DATA_RESPONSE — the parent never sends plain fields.

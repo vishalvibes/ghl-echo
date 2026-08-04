@@ -13,8 +13,10 @@
   "dependencies": {
     "@copilot/shared": "workspace:*",
     "@tanstack/vue-query": "^5.101.4",
+    "@vueuse/core": "^14.4.0",
     "clsx": "^2.1.1",
     "lucide-vue-next": "^1.0.0",
+    "reka-ui": "^2.10.1",
     "tailwind-merge": "^3.6.0",
     "vue": "^3.5.40",
     "vue-router": "^5.2.0",

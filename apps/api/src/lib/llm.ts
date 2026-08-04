@@ -62,8 +62,6 @@ export interface StructuredRequest<T> {
   system: string
   user: string
   schema: z.ZodType<T>
-  /** Lower for judging (consistency), higher for recommendations (variety). */
-  temperature?: number
   maxOutputTokens?: number
 }
 
@@ -99,7 +97,9 @@ export async function completeStructured<T>(req: StructuredRequest<T>): Promise<
     const response = await openai.chat.completions.create({
       model: env.OPENAI_MODEL,
       messages,
-      temperature: req.temperature ?? 0.1,
+      // No `temperature`: the GPT-5.6 family rejects any value but the
+      // default with `400 Unsupported value`. Consistency comes from the
+      // schema and the prompt, not from a sampling knob we cannot set.
       max_completion_tokens: req.maxOutputTokens ?? 4000,
       response_format: { type: 'json_object' },
     })

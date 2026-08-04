@@ -7,6 +7,8 @@ import { useSaveScorecard, useScorecard, useSuggestCriteria } from '../composabl
 import Card from '../components/ui/Card.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import LoadingBlock from '../components/ui/LoadingBlock.vue'
+import Input from '../components/ui/Input.vue'
+import Select from '../components/ui/Select.vue'
 
 const route = useRoute()
 const agentId = computed(() => String(route.params.id))
@@ -35,6 +37,12 @@ watch(
 function markDirty() {
   dirty.value = true
 }
+
+const criterionTypeOptions: Array<{ value: Criterion['type']; label: string }> = [
+  { value: 'boolean', label: 'boolean' },
+  { value: 'scale', label: 'scale 1–5' },
+  { value: 'extraction', label: 'extraction' },
+]
 
 function addCriterion() {
   criteria.value.push({
@@ -89,7 +97,7 @@ async function submit() {
     <template v-else-if="data">
       <div class="flex items-center justify-between">
         <div>
-          <div class="text-xs text-ink-3">
+          <div class="text-sm text-ink-3">
             <RouterLink :to="`/agents/${agentId}`" class="hover:underline">{{ data.agentName }}</RouterLink> / Scorecard
           </div>
           <h1 class="text-lg font-semibold">
@@ -110,13 +118,13 @@ async function submit() {
       <p v-if="llmDisabled" class="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm">
         LLM is disabled — criteria generation needs OPENAI_ENABLED=true in apps/api/.env.
       </p>
-      <p v-if="suggest.data.value" class="rounded-md border border-hairline bg-surface px-3 py-2 text-xs text-ink-2">
+      <p v-if="suggest.data.value" class="rounded-md border border-hairline bg-surface px-3 py-2 text-sm text-ink-2">
         {{ suggest.data.value.reasoning }}
       </p>
 
       <Card title="Criteria" subtitle="What the judge scores every call against. Saving creates a new version; existing evaluations keep theirs.">
         <template #actions>
-          <button class="flex items-center gap-1 rounded-md border border-hairline px-2.5 py-1 text-xs hover:bg-plane" @click="addCriterion">
+          <button class="flex items-center gap-1 rounded-md border border-hairline px-2.5 py-1 text-sm hover:bg-plane" @click="addCriterion">
             <Plus class="size-3.5" aria-hidden="true" /> Add
           </button>
         </template>
@@ -132,36 +140,32 @@ async function submit() {
                 :aria-label="`Enable ${criterion.label}`"
                 @change="markDirty"
               />
-              <input
+              <Input
                 v-model="criterion.key"
-                class="w-52 rounded-md border border-hairline bg-surface px-2 py-1 font-mono text-xs"
+                class="w-52 font-mono"
                 aria-label="Criterion key"
                 @input="markDirty"
               />
-              <input
+              <Input
                 v-model="criterion.label"
-                class="min-w-40 flex-1 rounded-md border border-hairline bg-surface px-2 py-1 text-sm"
+                class="min-w-40 flex-1"
                 aria-label="Criterion label"
                 @input="markDirty"
               />
-              <select
+              <Select
                 v-model="criterion.type"
-                class="rounded-md border border-hairline bg-surface px-2 py-1 text-xs"
+                :options="criterionTypeOptions"
                 aria-label="Criterion type"
-                @change="markDirty"
-              >
-                <option value="boolean">boolean</option>
-                <option value="scale">scale 1–5</option>
-                <option value="extraction">extraction</option>
-              </select>
-              <label class="flex items-center gap-1 text-xs text-ink-2">
+                @update:model-value="markDirty"
+              />
+              <label class="flex items-center gap-1 text-sm text-ink-2">
                 weight
-                <input
-                  v-model.number="criterion.weight"
+                <Input
+                  v-model="criterion.weight"
                   type="number"
                   min="1"
                   max="5"
-                  class="w-14 rounded-md border border-hairline bg-surface px-2 py-1"
+                  class="w-16"
                   @input="markDirty"
                 />
               </label>
@@ -180,7 +184,7 @@ async function submit() {
             <input
               :value="criterion.failWhen ?? ''"
               placeholder="Fails when… (optional, sharpens borderline cases)"
-              class="mt-1.5 w-full rounded-md border border-hairline bg-surface px-2 py-1.5 text-xs"
+              class="mt-1.5 w-full rounded-md border border-hairline bg-surface px-2 py-1.5 text-sm"
               aria-label="Fail condition"
               @input="criterion.failWhen = ($event.target as HTMLInputElement).value || null; markDirty()"
             />

@@ -16,12 +16,12 @@ const labels: Record<Verdict, string> = { pass: 'Pass', partial: 'Partial', fail
 <template>
   <span
     v-if="verdict"
-    class="inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium"
+    class="inline-flex items-center rounded-full border px-2 py-0.5 text-sm font-medium"
     :class="styles[verdict]"
   >
     {{ labels[verdict] }}
   </span>
-  <span v-else class="inline-flex items-center rounded-full border border-hairline px-2 py-0.5 text-xs text-ink-3">
+  <span v-else class="inline-flex items-center rounded-full border border-hairline px-2 py-0.5 text-sm text-ink-3">
     Not scored
   </span>
 </template>

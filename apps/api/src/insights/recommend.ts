@@ -157,7 +157,6 @@ FAILURE CLUSTERS from ${callIds.length} failed or partial calls:
 
 ${renderClusters(clusters)}`,
     schema: modelOutputSchema,
-    temperature: 0.3,
     maxOutputTokens: 3000,
   })
 

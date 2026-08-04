@@ -73,7 +73,6 @@ export async function judgeCall(input: JudgeInput): Promise<JudgeResult> {
     system: JUDGE_SYSTEM_PROMPT,
     user: buildJudgeUserPrompt({ criteria: input.criteria }, input.transcript, input.context),
     schema: judgeOutputSchema,
-    temperature: 0,
     maxOutputTokens: 4000,
   })
 

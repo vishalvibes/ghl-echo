@@ -4,33 +4,64 @@ import { db } from '../db/client.js'
 import { calls, locations } from '../db/schema.js'
 import { evaluateCall } from '../ingest/evaluate.js'
 import { ingestCallFromGhl, listBackfillCandidates } from '../ingest/ghl-ingest.js'
+import { assessQualityCall } from '../ingest/quality.js'
 import { LlmDisabledError } from '../lib/llm.js'
 import { EVENT_BACKFILL_REQUESTED, EVENT_TRANSCRIPT_RECEIVED, inngest } from './client.js'
 
-/**
- * evaluate-call: judge one ingested call. Retried by Inngest on transient
- * failure (rate limits, timeouts); permanently skipped when the LLM is off —
- * retrying a config problem just fills the dead-letter queue.
- */
-export const evaluateCallFn = inngest.createFunction(
+/** Process one call through durable, independently retryable stages. */
+export const processCallFn = inngest.createFunction(
   {
-    id: 'evaluate-call',
+    id: 'process-call',
     retries: 3,
     concurrency: { limit: 4 },
+    idempotency: 'event.data.callId',
     triggers: [{ event: EVENT_TRANSCRIPT_RECEIVED }],
   },
   async ({ event, step }) => {
     const callId = (event.data as { callId: string }).callId
-    return step.run('judge-and-persist', async () => {
+
+    await step.run('mark-processing', async () => {
+      await db
+        .update(calls)
+        .set({ ingestStatus: 'pending', ingestError: null })
+        .where(eq(calls.id, callId))
+    })
+
+    const quality = await step.run('assess-quality', async () => {
+      try {
+        return await assessQualityCall(callId)
+      } catch (error) {
+        if (error instanceof LlmDisabledError) {
+          await db
+            .update(calls)
+            .set({ ingestStatus: 'skipped', ingestError: 'LLM disabled' })
+            .where(eq(calls.id, callId))
+          throw new NonRetriableError('LLM disabled - enable OPENAI_ENABLED to process calls')
+        }
+        await db
+          .update(calls)
+          .set({ ingestStatus: 'failed', ingestError: (error as Error).message.slice(0, 500) })
+          .where(eq(calls.id, callId))
+        throw error
+      }
+    })
+
+    const evaluation = await step.run('evaluate-scorecard', async () => {
       try {
         return await evaluateCall(callId)
       } catch (error) {
         if (error instanceof LlmDisabledError) {
-          throw new NonRetriableError('LLM disabled — enable OPENAI_ENABLED to evaluate calls')
+          await db
+            .update(calls)
+            .set({ ingestStatus: 'skipped', ingestError: 'LLM disabled' })
+            .where(eq(calls.id, callId))
+          throw new NonRetriableError('LLM disabled - enable OPENAI_ENABLED to process calls')
         }
         throw error
       }
     })
+
+    return { callId, quality, evaluation }
   },
 )
 
@@ -97,4 +128,4 @@ export const sweepPendingFn = inngest.createFunction(
   },
 )
 
-export const functions = [evaluateCallFn, backfillFn, sweepPendingFn]
+export const functions = [processCallFn, backfillFn, sweepPendingFn]

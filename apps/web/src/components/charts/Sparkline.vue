@@ -24,5 +24,5 @@ const path = computed(() => {
   <svg v-if="path" :viewBox="`0 0 ${W} ${H}`" class="h-5 w-[72px]" aria-hidden="true">
     <path :d="path" fill="none" class="stroke-series" stroke-width="1.5" stroke-linejoin="round" />
   </svg>
-  <span v-else class="text-xs text-ink-3">—</span>
+  <span v-else class="text-sm text-ink-3">—</span>
 </template>

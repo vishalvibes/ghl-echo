@@ -21,7 +21,7 @@ const max = computed(() => Math.max(1, ...props.items.map((i) => i.count)))
           :style="{ width: `${(item.count / max) * 100}%` }"
         />
       </span>
-      <span class="w-8 text-right text-xs tabular-nums text-ink-2">{{ item.count }}</span>
+      <span class="w-8 text-right text-sm tabular-nums text-ink-2">{{ item.count }}</span>
     </li>
   </ul>
 </template>

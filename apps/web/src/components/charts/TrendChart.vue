@@ -11,7 +11,7 @@ const props = defineProps<{ points: TrendPoint[] }>()
 
 const W = 640
 const H = 180
-const PAD = { top: 12, right: 12, bottom: 24, left: 36 }
+const PAD = { top: 12, right: 12, bottom: 28, left: 44 }
 
 const inner = { w: W - PAD.left - PAD.right, h: H - PAD.top - PAD.bottom }
 
@@ -82,7 +82,7 @@ const gridY = [0, 0.25, 0.5, 0.75, 1]
           :x="PAD.left - 6"
           :y="PAD.top + (1 - g) * inner.h + 3"
           text-anchor="end"
-          class="fill-ink-3 text-[10px]"
+          class="fill-ink-3 text-sm"
         >
           {{ Math.round(g * 100) }}%
         </text>
@@ -95,7 +95,7 @@ const gridY = [0, 0.25, 0.5, 0.75, 1]
           :x="xy[i]!.x"
           :y="H - 6"
           text-anchor="middle"
-          class="fill-ink-3 text-[10px]"
+          class="fill-ink-3 text-sm"
         >
           {{ shortDate(xy[i]!.date) }}
         </text>
@@ -119,7 +119,7 @@ const gridY = [0, 0.25, 0.5, 0.75, 1]
     </svg>
     <div
       v-if="hoverPoint"
-      class="pointer-events-none absolute top-1 rounded-md border border-hairline bg-surface px-2.5 py-1.5 text-xs shadow-sm"
+      class="pointer-events-none absolute top-1 rounded-md border border-hairline bg-surface px-2.5 py-1.5 text-sm shadow-sm"
       :style="{ left: `min(max(${(hoverPoint.x / W) * 100}% - 3rem, 0%), calc(100% - 8rem))` }"
     >
       <div class="font-medium">{{ shortDate(hoverPoint.date) }}</div>

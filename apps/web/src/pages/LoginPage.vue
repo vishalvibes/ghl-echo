@@ -44,7 +44,7 @@ async function submit() {
       <div class="p-8">
         <div class="flex items-center gap-2 pb-1.5">
           <Activity class="size-6 text-series" aria-hidden="true" />
-          <span class="text-lg font-semibold tracking-tight">Voice AI Copilot</span>
+          <span class="text-lg font-semibold tracking-tight">Echo</span>
         </div>
         <p class="pb-6 text-sm text-ink-2">Sign in to continue.</p>
 
@@ -87,7 +87,7 @@ async function submit() {
           </button>
         </form>
 
-        <div class="mt-6 flex items-center gap-3 text-xs text-ink-3" aria-hidden="true">
+        <div class="mt-6 flex items-center gap-3 text-sm text-ink-3" aria-hidden="true">
           <span class="h-px flex-1 bg-hairline" />
           or
           <span class="h-px flex-1 bg-hairline" />

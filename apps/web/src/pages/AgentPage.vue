@@ -47,7 +47,7 @@ async function copyPatch(rank: number, patch: string) {
     <template v-else-if="agent">
       <div class="flex items-center justify-between">
         <div>
-          <div class="text-xs text-ink-3"><RouterLink to="/" class="hover:underline">Overview</RouterLink> / Agent</div>
+          <div class="text-sm text-ink-3"><RouterLink to="/" class="hover:underline">Overview</RouterLink> / Agent</div>
           <h1 class="text-lg font-semibold">{{ agent.name }}</h1>
         </div>
         <div class="flex items-center gap-2">
@@ -80,13 +80,13 @@ async function copyPatch(rank: number, patch: string) {
               <div class="mb-1 flex items-baseline justify-between text-sm">
                 <span>
                   {{ criterion.label }}
-                  <span class="text-xs text-ink-3">· w{{ criterion.weight }} · {{ criterion.evaluated }} calls</span>
+                  <span class="text-sm text-ink-3">· w{{ criterion.weight }} · {{ criterion.evaluated }} calls</span>
                 </span>
                 <span class="tabular-nums">
                   {{ pct(criterion.passRate) }}
                   <span
                     v-if="Math.round(criterion.delta * 100) !== 0"
-                    class="ml-1 text-xs"
+                    class="ml-1 text-sm"
                     :class="criterion.delta > 0 ? 'text-good-text' : 'text-critical'"
                   >
                     {{ criterion.delta > 0 ? '▲' : '▼' }}{{ Math.abs(Math.round(criterion.delta * 100)) }}
@@ -116,7 +116,7 @@ async function copyPatch(rank: number, patch: string) {
       >
         <template #actions>
           <button
-            class="flex items-center gap-1.5 rounded-md border border-hairline px-2.5 py-1 text-xs hover:bg-plane"
+            class="flex items-center gap-1.5 rounded-md border border-hairline px-2.5 py-1 text-sm hover:bg-plane"
             @click="force = true; void refetchRecs()"
           >
             <RefreshCw class="size-3.5" aria-hidden="true" /> Regenerate
@@ -143,16 +143,16 @@ async function copyPatch(rank: number, patch: string) {
                 <Sparkles class="size-4 text-series" aria-hidden="true" />
                 <h3 class="text-sm font-semibold">{{ item.rank }}. {{ item.title }}</h3>
               </div>
-              <span class="shrink-0 rounded-full border border-hairline px-2 py-0.5 text-xs text-ink-2">
+              <span class="shrink-0 rounded-full border border-hairline px-2 py-0.5 text-sm text-ink-2">
                 {{ item.expectedImpact }} impact · {{ item.affectedCalls }} calls
               </span>
             </div>
             <p class="mt-2 text-sm text-ink-2">{{ item.diagnosis }}</p>
             <pre
               v-if="item.promptPatch"
-              class="mt-3 overflow-x-auto rounded-md bg-plane p-3 text-xs leading-relaxed whitespace-pre-wrap"
+              class="mt-3 overflow-x-auto rounded-md bg-plane p-3 text-sm leading-relaxed whitespace-pre-wrap"
             >{{ item.promptPatch }}</pre>
-            <div class="mt-3 flex items-center gap-3 text-xs">
+            <div class="mt-3 flex items-center gap-3 text-sm">
               <button
                 v-if="item.promptPatch"
                 class="flex items-center gap-1 rounded-md border border-hairline px-2 py-1 hover:bg-plane"

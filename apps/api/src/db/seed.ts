@@ -2,8 +2,9 @@ import { eq } from 'drizzle-orm'
 import { closeDb, db } from './client.js'
 import { agents, calls, locations, scorecards } from './schema.js'
 import { FIXTURE_AGENTS } from '../fixtures/agents.js'
-import { FIXTURE_CALLS, type FixtureCall } from '../fixtures/calls.js'
+import { FIXTURE_CALLS } from '../fixtures/calls.js'
 import { persistEvaluation } from '../ingest/evaluate.js'
+import { computeTranscriptMetrics } from '@copilot/shared'
 
 /**
  * Seed a demo location with fixture agents, scorecards, calls and — because
@@ -24,30 +25,6 @@ function lcg(seed: number): () => number {
     state = (state * 1664525 + 1013904223) % 2 ** 32
     return state / 2 ** 32
   }
-}
-
-/**
- * Clone each handcrafted call across the window so trend charts have volume.
- * Clones share the transcript and judgement but get their own call id and a
- * jittered date/duration — good enough for a demo, and every row stays
- * flagged isMock so nobody mistakes it for telemetry.
- */
-function expandCalls(): FixtureCall[] {
-  const random = lcg(42)
-  const expanded: FixtureCall[] = [...FIXTURE_CALLS]
-  for (const base of FIXTURE_CALLS) {
-    const clones = 2 + Math.floor(random() * 3) // 2-4 clones per handcrafted call
-    for (let i = 0; i < clones; i++) {
-      expanded.push({
-        ...base,
-        ghlCallId: `${base.ghlCallId}-r${i + 1}`,
-        daysAgo: Math.min(13, base.daysAgo + 1 + Math.floor(random() * 10)),
-        durationSec: Math.max(20, Math.round(base.durationSec * (0.8 + random() * 0.4))),
-        contactPhone: base.contactPhone.slice(0, -2) + String(10 + Math.floor(random() * 90)),
-      })
-    }
-  }
-  return expanded
 }
 
 function startedAtFor(daysAgo: number, random: () => number): Date {
@@ -103,7 +80,7 @@ export async function seed(): Promise<void> {
   // 3. Calls + fixture evaluations
   const random = lcg(7)
   let inserted = 0
-  for (const fixture of expandCalls()) {
+  for (const fixture of FIXTURE_CALLS.slice(0, 3)) {
     const agentId = agentIdByKey.get(fixture.agentKey)
     if (!agentId) throw new Error(`Fixture call references unknown agent: ${fixture.agentKey}`)
 
@@ -113,6 +90,7 @@ export async function seed(): Promise<void> {
     })
     if (existing) continue
 
+    const metrics = computeTranscriptMetrics(fixture.transcript)
     const [call] = await db
       .insert(calls)
       .values({
@@ -126,6 +104,7 @@ export async function seed(): Promise<void> {
         startedAt: startedAtFor(fixture.daysAgo, random),
         durationSec: fixture.durationSec,
         transcript: fixture.transcript,
+        metrics,
         isMock: true,
       })
       .returning()

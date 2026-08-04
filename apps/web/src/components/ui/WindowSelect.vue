@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { AnalyticsWindow } from '@copilot/shared'
+import Select from './Select.vue'
 
 const model = defineModel<AnalyticsWindow>({ required: true })
 const options: Array<{ value: AnalyticsWindow; label: string }> = [
@@ -11,11 +12,5 @@ const options: Array<{ value: AnalyticsWindow; label: string }> = [
 </script>
 
 <template>
-  <select
-    v-model="model"
-    class="rounded-md border border-hairline bg-surface px-2.5 py-1.5 text-sm text-ink"
-    aria-label="Time window"
-  >
-    <option v-for="option in options" :key="option.value" :value="option.value">{{ option.label }}</option>
-  </select>
+  <Select v-model="model" :options="options" aria-label="Time window" />
 </template>

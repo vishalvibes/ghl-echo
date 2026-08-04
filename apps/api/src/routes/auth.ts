@@ -53,7 +53,7 @@ export const authRoutes: FastifyPluginAsyncZod = async (app) => {
         },
         request,
       )
-      return reply.redirect('/')
+      return reply.redirect('/installed')
     },
   )
 

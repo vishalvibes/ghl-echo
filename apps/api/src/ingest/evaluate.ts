@@ -11,7 +11,7 @@ import {
   evaluations,
   findings as findingsTable,
   scorecards,
-  segments as segmentsTable,
+  callActions,
   type AgentRow,
   type CallRow,
   type ScorecardRow,
@@ -119,7 +119,7 @@ export async function persistEvaluation(args: {
     }
 
     if (output.segments.length > 0) {
-      await tx.insert(segmentsTable).values(
+      await tx.insert(callActions).values(
         output.segments.map((s) => ({
           locationId: call.locationId,
           evaluationId,

@@ -5,6 +5,7 @@ import type {
   AnalyticsWindow,
   CallDetail,
   CallList,
+  IntegrationStatus,
   Overview,
   Recommendations,
   Scorecard,
@@ -18,10 +19,22 @@ import { api } from '../lib/api.js'
  * or filter changes refetch precisely, and mutations invalidate by prefix.
  */
 
-export function useOverview(window: Ref<AnalyticsWindow>) {
+export function useIntegrationStatus() {
   return useQuery({
-    queryKey: computed(() => ['overview', window.value]),
-    queryFn: () => api<Overview>(`/api/overview?window=${window.value}`),
+    queryKey: ['integration'],
+    queryFn: () => api<IntegrationStatus>('/api/integration'),
+    refetchInterval: 5_000,
+  })
+}
+
+export function useOverview(window: Ref<AnalyticsWindow>, agentId?: Ref<string>) {
+  return useQuery({
+    queryKey: computed(() => ['overview', window.value, agentId?.value ?? '']),
+    queryFn: () => {
+      const params = new URLSearchParams({ window: window.value })
+      if (agentId?.value) params.set('agentId', agentId.value)
+      return api<Overview>(`/api/overview?${params}`)
+    },
   })
 }
 

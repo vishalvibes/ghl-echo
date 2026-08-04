@@ -9,6 +9,8 @@ import {
   criterionResultSchema,
 } from './evaluation.js'
 import { callDirectionSchema, callOutcomeSchema, turnSchema } from './transcript.js'
+import { transcriptMetricsSchema } from './metrics.js'
+import { callQualitySchema } from './quality.js'
 
 /** Rolling window every dashboard read is scoped to. */
 export const windowSchema = z.enum(['24h', '7d', '30d', '90d'])
@@ -20,6 +22,14 @@ export const WINDOW_DAYS: Record<AnalyticsWindow, number> = {
   '30d': 30,
   '90d': 90,
 }
+
+/** Shell-level state that decides whether analytics routes can be shown. */
+export const integrationStatusSchema = z.object({
+  ghlLocationId: z.string(),
+  oauthConnected: z.boolean(),
+  hasCalls: z.boolean(),
+})
+export type IntegrationStatus = z.infer<typeof integrationStatusSchema>
 
 // --- Overview ---------------------------------------------------------------
 
@@ -40,6 +50,30 @@ export const trendPointSchema = z.object({
   passRate: z.number().min(0).max(1),
 })
 export type TrendPoint = z.infer<typeof trendPointSchema>
+
+/** Running aggregates through each day in the selected window. */
+export const callMetricTrendPointSchema = z.object({
+  date: z.string(),
+  calls: z.number().int(),
+  cumulativeCalls: z.number().int(),
+  avgDurationSec: z.number().nullable(),
+  agentTalkShare: z.number().min(0).max(1).nullable(),
+  interruptionRate: z.number().min(0).max(1).nullable(),
+  callerRepeatRate: z.number().min(0).max(1).nullable(),
+  completionRate: z.number().min(0).max(1).nullable(),
+  resolvedRate: z.number().min(0).max(1).nullable(),
+  prematureHangupRate: z.number().min(0).max(1).nullable(),
+  scriptAdherence: z.number().min(1).max(5).nullable(),
+  comprehension: z.number().min(1).max(5).nullable(),
+  tone: z.number().min(1).max(5).nullable(),
+  nameCaptureRate: z.number().min(0).max(1).nullable(),
+  emailCaptureRate: z.number().min(0).max(1).nullable(),
+  phoneCaptureRate: z.number().min(0).max(1).nullable(),
+  positiveSentimentRate: z.number().min(0).max(1).nullable(),
+  neutralSentimentRate: z.number().min(0).max(1).nullable(),
+  negativeSentimentRate: z.number().min(0).max(1).nullable(),
+})
+export type CallMetricTrendPoint = z.infer<typeof callMetricTrendPointSchema>
 
 export const failureModeSchema = z.object({
   type: findingTypeSchema,
@@ -63,10 +97,18 @@ export const agentSummarySchema = z.object({
 })
 export type AgentSummary = z.infer<typeof agentSummarySchema>
 
+/**
+ * Cumulative read of the LLM quality pass across the window.
+ *
+ * Separate from `kpis` because it has a different denominator: KPIs count
+ * every call, this counts only calls the quality pass actually ran on. Mixing
+ * the two would quietly understate every average as coverage grows.
+ */
 export const overviewSchema = z.object({
   window: windowSchema,
   kpis: kpiSchema,
   trend: z.array(trendPointSchema),
+  metricTrend: z.array(callMetricTrendPointSchema),
   failureModes: z.array(failureModeSchema),
   agents: z.array(agentSummarySchema),
 })
@@ -158,7 +200,18 @@ export type IngestStatus = z.infer<typeof ingestStatusSchema>
 
 export const callDetailSchema = callListItemSchema.extend({
   transcript: z.array(turnSchema),
-  recordingUrl: z.string().nullable(),
+  /**
+   * Deterministic transcript metrics. Independent of the judge, so they are
+   * present even on unscored calls. Null only for rows ingested before the
+   * metrics pass existed.
+   */
+  metrics: transcriptMetricsSchema.nullable(),
+  /**
+   * The model's read of the call — outcome, script adherence, comprehension,
+   * tone, missed opportunities. Null when the quality pass has not run (LLM
+   * off, or the transcript was too short to be worth a model call).
+   */
+  quality: callQualitySchema.nullable(),
   ingestStatus: ingestStatusSchema,
   ingestError: z.string().nullable(),
   isMock: z.boolean(),

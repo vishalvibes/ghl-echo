@@ -122,12 +122,40 @@ export const webhookRoutes: FastifyPluginAsyncZod = async (app) => {
           return { ok: true, ignored: 'no locationId in payload' }
         }
 
-        const location = await db.query.locations.findFirst({
+        let location = await db.query.locations.findFirst({
           where: eq(locations.ghlLocationId, ghlLocationId),
         })
+        if (!location) {
+          const [created] = await db
+            .insert(locations)
+            .values({ ghlLocationId, name: 'HighLevel location' })
+            // Concurrent webhook deliveries can discover the same location.
+            .onConflictDoNothing({ target: locations.ghlLocationId })
+            .returning()
+
+          location =
+            created ??
+            (await db.query.locations.findFirst({
+              where: eq(locations.ghlLocationId, ghlLocationId),
+            }))
+
+          request.log.info({ ghlLocationId }, 'discovered location from signed webhook')
+        }
         if (!location || location.uninstalledAt) {
-          // Unknown tenant — acknowledge so GHL stops retrying, but do nothing.
+          // Do not reactivate an explicitly uninstalled tenant from a delayed
+          // webhook. A new OAuth install clears `uninstalledAt`.
           return { ok: true, ignored: 'location not installed' }
+        }
+
+        if (!location.accessToken || !location.refreshToken) {
+          // A signed webhook can arrive before OAuth finishes, or after a
+          // local database reset. Keep the tenant so SSO/OAuth can enrich this
+          // same row; the install backfill will recover this call afterward.
+          request.log.warn(
+            { ghlLocationId },
+            'location discovered but awaiting OAuth authorization',
+          )
+          return { ok: true, accepted: true, pendingAuthorization: true }
         }
 
         const candidate = toCandidate(payload)

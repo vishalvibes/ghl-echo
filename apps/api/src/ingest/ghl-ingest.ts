@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm'
-import type { CallDirection, CallOutcome } from '@copilot/shared'
+import { computeTranscriptMetrics, type CallDirection, type CallOutcome } from '@copilot/shared'
 import { db } from '../db/client.js'
 import { agents, calls, type LocationRow } from '../db/schema.js'
 import { fetchCallLogs, fetchTranscript, fetchVoiceAgent } from '../ghl/client.js'
@@ -18,14 +18,12 @@ import { normalizePlainText, normalizeTranscript, type RawTranscriptEntry } from
 export interface CallCandidate {
   ghlCallId: string
   ghlAgentId: string
-  contactId?: string
   contactName?: string
   contactPhone?: string
   direction: CallDirection
   outcome: CallOutcome
   startedAt: string
   durationSec: number
-  recordingUrl?: string
   /** Present when the payload carried the transcript inline. */
   transcript?: unknown
 }
@@ -58,14 +56,12 @@ export function toCandidate(raw: Record<string, unknown>): CallCandidate | null 
   return {
     ghlCallId,
     ghlAgentId,
-    contactId: str(raw.contactId),
     contactName: str(raw.contactName) ?? str(raw.fullName),
     contactPhone: str(raw.phone) ?? str(raw.contactPhone) ?? str(raw.from) ?? str(raw.to),
     direction: String(raw.direction ?? '').toLowerCase() === 'outbound' ? 'outbound' : 'inbound',
     outcome: toOutcome(raw.status ?? raw.outcome ?? raw.callStatus),
     startedAt,
     durationSec,
-    recordingUrl: str(raw.recordingUrl) ?? str(raw.recordingURL),
     transcript: raw.transcript ?? raw.messages,
   }
 }
@@ -142,6 +138,7 @@ export async function ingestCallFromGhl(
     transcriptRaw = await fetchTranscript(location, candidate.ghlCallId)
   }
   const transcript = normalizeAnyTranscript(transcriptRaw)
+  const metrics = computeTranscriptMetrics(transcript)
 
   const [inserted] = await db
     .insert(calls)
@@ -149,15 +146,14 @@ export async function ingestCallFromGhl(
       locationId: location.id,
       agentId: agent.id,
       ghlCallId: candidate.ghlCallId,
-      ghlContactId: candidate.contactId ?? null,
       contactName: candidate.contactName ?? null,
       contactPhone: candidate.contactPhone ?? null,
       direction: candidate.direction,
       outcome: candidate.outcome,
       startedAt: new Date(candidate.startedAt),
       durationSec: candidate.durationSec,
-      recordingUrl: candidate.recordingUrl ?? null,
       transcript,
+      metrics,
       ingestStatus: 'pending',
       isMock: false,
     })

@@ -13,7 +13,7 @@ import {
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core'
-import type { Criterion, Turn } from '@copilot/shared'
+import type { CallQuality, Criterion, TranscriptMetrics, Turn } from '@copilot/shared'
 
 /**
  * Every row in this schema is scoped to a HighLevel location (sub-account).
@@ -120,15 +120,71 @@ export const calls = pgTable(
       .references(() => agents.id, { onDelete: 'cascade' }),
     /** Dedupe key — webhooks are at-least-once, so ingest must be idempotent. */
     ghlCallId: varchar('ghl_call_id', { length: 128 }).notNull(),
-    ghlContactId: varchar('ghl_contact_id', { length: 64 }),
     contactName: text('contact_name'),
     contactPhone: varchar('contact_phone', { length: 32 }),
     direction: callDirectionEnum('direction').notNull(),
     outcome: callOutcomeEnum('outcome').notNull().default('completed'),
     startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
     durationSec: integer('duration_sec').notNull().default(0),
-    recordingUrl: text('recording_url'),
     transcript: jsonb('transcript').$type<Turn[]>().notNull(),
+    /**
+     * Deterministic conversation metrics (talk ratio, interruptions,
+     * repetition). Computed from `transcript` at ingest, so they exist even
+     * when the judge is disabled. Nullable for rows written before the
+     * metrics pass existed; recomputable at any time from the transcript.
+     */
+    metrics: jsonb('metrics').$type<TranscriptMetrics>(),
+    /** Stored projections used by aggregate queries; never written by ingest. */
+    agentTalkRatio: real('agent_talk_ratio').generatedAlwaysAs(
+      sql`(("metrics" ->> 'talkRatio')::real)`,
+    ),
+    interruptionRate: real('interruption_rate').generatedAlwaysAs(
+      sql`(("metrics" #>> '{endpointing,interruptionRate}')::real)`,
+    ),
+    callerRepeatRate: real('caller_repeat_rate').generatedAlwaysAs(
+      sql`(("metrics" #>> '{comprehension,callerRepeatRate}')::real)`,
+    ),
+    /**
+     * Model-assessed quality: outcome, script adherence, comprehension, tone,
+     * information captured, missed opportunities. One LLM pass, one JSON blob.
+     *
+     * Lives on the call rather than the evaluation because it is scorecard-
+     * independent — it is the baseline for calls that have no scorecard yet,
+     * which is most of them on a fresh install. Null means the pass has not
+     * run (LLM off, transcript too short, or the row predates the column).
+     */
+    quality: jsonb('quality').$type<CallQuality>(),
+    /** Stored quality projections. Null means the quality pass has not run. */
+    callCompleted: boolean('call_completed').generatedAlwaysAs(
+      sql`(("quality" ->> 'callCompleted')::boolean)`,
+    ),
+    taskOutcome: varchar('task_outcome', { length: 32 }).generatedAlwaysAs(
+      sql`("quality" #>> '{outcome,result}')`,
+    ),
+    scriptAdherenceScore: integer('script_adherence_score').generatedAlwaysAs(
+      sql`(("quality" #>> '{scriptAdherence,score}')::integer)`,
+    ),
+    comprehensionScore: integer('comprehension_score').generatedAlwaysAs(
+      sql`(("quality" #>> '{comprehension,score}')::integer)`,
+    ),
+    toneScore: integer('tone_score').generatedAlwaysAs(
+      sql`(("quality" #>> '{tone,score}')::integer)`,
+    ),
+    callerSentiment: varchar('caller_sentiment', { length: 16 }).generatedAlwaysAs(
+      sql`("quality" ->> 'callerSentiment')`,
+    ),
+    prematureHangup: boolean('premature_hangup').generatedAlwaysAs(
+      sql`(("quality" ->> 'prematureHangup')::boolean)`,
+    ),
+    capturedName: boolean('captured_name').generatedAlwaysAs(
+      sql`(("quality" #>> '{informationCaptured,name}')::boolean)`,
+    ),
+    capturedEmail: boolean('captured_email').generatedAlwaysAs(
+      sql`(("quality" #>> '{informationCaptured,email}')::boolean)`,
+    ),
+    capturedPhone: boolean('captured_phone').generatedAlwaysAs(
+      sql`(("quality" #>> '{informationCaptured,phone}')::boolean)`,
+    ),
     ingestStatus: ingestStatusEnum('ingest_status').notNull().default('pending'),
     ingestError: text('ingest_error'),
     /** True for synthetic calls loaded from fixtures. Surfaced in the UI. */
@@ -238,8 +294,8 @@ export const findings = pgTable(
 )
 
 /** "Use Actions": spans of a call that need a human. The daily work queue. */
-export const segments = pgTable(
-  'segments',
+export const callActions = pgTable(
+  'call_actions',
   {
     id: uuid('id').primaryKey().defaultRandom(),
     locationId: uuid('location_id')
@@ -263,7 +319,7 @@ export const segments = pgTable(
     resolvedAt: timestamp('resolved_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index('segments_location_status_idx').on(t.locationId, t.status, t.createdAt.desc())],
+  (t) => [index('call_actions_location_status_idx').on(t.locationId, t.status, t.createdAt.desc())],
 )
 
 // --- Recommendations --------------------------------------------------------
@@ -313,7 +369,7 @@ export const evaluationsRelations = relations(evaluations, ({ one, many }) => ({
   agent: one(agents, { fields: [evaluations.agentId], references: [agents.id] }),
   criterionResults: many(criterionResults),
   findings: many(findings),
-  segments: many(segments),
+  segments: many(callActions),
 }))
 
 export const criterionResultsRelations = relations(criterionResults, ({ one }) => ({
@@ -328,13 +384,13 @@ export const findingsRelations = relations(findings, ({ one }) => ({
   call: one(calls, { fields: [findings.callId], references: [calls.id] }),
 }))
 
-export const segmentsRelations = relations(segments, ({ one }) => ({
-  evaluation: one(evaluations, { fields: [segments.evaluationId], references: [evaluations.id] }),
-  call: one(calls, { fields: [segments.callId], references: [calls.id] }),
+export const callActionsRelations = relations(callActions, ({ one }) => ({
+  evaluation: one(evaluations, { fields: [callActions.evaluationId], references: [evaluations.id] }),
+  call: one(calls, { fields: [callActions.callId], references: [calls.id] }),
 }))
 
-export type SegmentRow = typeof segments.$inferSelect
-export type SegmentInsert = typeof segments.$inferInsert
+export type CallActionRow = typeof callActions.$inferSelect
+export type CallActionInsert = typeof callActions.$inferInsert
 export type CallRow = typeof calls.$inferSelect
 export type AgentRow = typeof agents.$inferSelect
 export type ScorecardRow = typeof scorecards.$inferSelect

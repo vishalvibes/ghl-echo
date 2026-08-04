@@ -34,6 +34,8 @@ html,
 body,
 #app {
   height: 100%;
+  margin: 0;
+  padding: 0;
 }
 
 /* Keep form controls, scrollbars and focus rings light even when the OS is dark. */
@@ -41,8 +43,13 @@ body,
   color-scheme: light;
 }
 
+/*
+ * Body is white so the iframe top sits flush against GHL's white chrome —
+ * plane gray on the body showed through as a band between their header and
+ * ours. The canvas color lives on <main> instead.
+ */
 body {
-  background: var(--color-plane);
+  background: var(--color-surface);
   color: var(--color-ink);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;

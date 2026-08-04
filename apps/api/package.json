@@ -14,7 +14,8 @@
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "seed": "tsx src/db/seed.ts"
+    "seed": "tsx src/db/seed.ts",
+    "backfill:quality": "tsx src/db/backfill-quality.ts"
   },
   "dependencies": {
     "@copilot/shared": "workspace:*",

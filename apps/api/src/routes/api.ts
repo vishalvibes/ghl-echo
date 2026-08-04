@@ -3,6 +3,7 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod'
 import { z } from 'zod'
 import { and, count, desc, eq, gte, ilike, inArray, or, sql } from 'drizzle-orm'
 import {
+  computeTranscriptMetrics,
   scorecardDraftSchema,
   suggestedCriteriaSchema,
   windowSchema,
@@ -11,6 +12,7 @@ import {
   type Overview,
 } from '@copilot/shared'
 import { db } from '../db/client.js'
+import { DEMO_LOCATION_GHL_ID } from '../db/seed.js'
 import {
   agents,
   calls,
@@ -18,8 +20,9 @@ import {
   findings,
   locations,
   scorecards,
-  segments,
+  callActions,
 } from '../db/schema.js'
+import { env } from '../config/env.js'
 import { EVENT_BACKFILL_REQUESTED, inngest } from '../inngest/client.js'
 import { syncAgentsForLocation } from './agent-sync.js'
 import { activeScorecardFor } from '../ingest/evaluate.js'
@@ -33,29 +36,64 @@ import {
   computeCriterionBreakdown,
   computeFailureModes,
   computeKpis,
+  computeMetricTrend,
   computeTrend,
   windowStart,
 } from './analytics.js'
 
 const windowQuery = z.object({ window: windowSchema.default('7d') })
+const overviewQuery = windowQuery.extend({ agentId: z.uuid().optional() })
 const idParam = z.object({ id: z.uuid() })
 
 export const apiRoutes: FastifyPluginAsyncZod = async (app) => {
   // Every /api route requires an iframe session; tenant comes from the cookie.
   app.addHook('preHandler', requireSession)
 
+  app.get('/api/integration', async (request) => {
+    const [location, callTotal] = await Promise.all([
+      db.query.locations.findFirst({
+        where: eq(locations.id, request.session.locationId),
+        columns: {
+          ghlLocationId: true,
+          accessToken: true,
+          refreshToken: true,
+          uninstalledAt: true,
+        },
+      }),
+      db
+        .select({ value: count() })
+        .from(calls)
+        .where(eq(calls.locationId, request.session.locationId))
+        .then((rows) => rows[0]?.value ?? 0),
+    ])
+
+    const fixtureLocation =
+      env.USE_FIXTURES && location?.ghlLocationId === DEMO_LOCATION_GHL_ID
+
+    return {
+      ghlLocationId: location?.ghlLocationId ?? request.session.ghlLocationId,
+      oauthConnected:
+        fixtureLocation ||
+        Boolean(location?.accessToken && location.refreshToken && !location.uninstalledAt),
+      hasCalls: callTotal > 0,
+    }
+  })
+
   // --- Overview -------------------------------------------------------------
 
-  app.get('/api/overview', { schema: { querystring: windowQuery } }, async (request): Promise<Overview> => {
-    const { window } = request.query
-    const scope = { locationId: request.session.locationId }
-    const [kpis, trend, failureModes, agentSummaries] = await Promise.all([
+  app.get('/api/overview', { schema: { querystring: overviewQuery } }, async (request): Promise<Overview> => {
+    const { window, agentId } = request.query
+    // The agent table stays unfiltered — it is the picker's own source, and
+    // filtering it to the selected agent would leave no way to switch back.
+    const scope = { locationId: request.session.locationId, ...(agentId ? { agentId } : {}) }
+    const [kpis, trend, metricTrend, failureModes, agentSummaries] = await Promise.all([
       computeKpis(scope, window),
       computeTrend(scope, window),
+      computeMetricTrend(scope, window),
       computeFailureModes(scope, window),
       computeAgentSummaries(scope.locationId, window),
     ])
-    return { window, kpis, trend, failureModes, agents: agentSummaries }
+    return { window, kpis, trend, metricTrend, failureModes, agents: agentSummaries }
   })
 
   // --- Agents ---------------------------------------------------------------
@@ -234,7 +272,7 @@ export const apiRoutes: FastifyPluginAsyncZod = async (app) => {
       if (q.verdict) conditions.push(eq(evaluations.verdict, q.verdict))
       if (q.needsAction === 'true') {
         conditions.push(
-          sql`exists (select 1 from ${segments} s where s.call_id = ${calls.id} and s.status = 'open')`,
+          sql`exists (select 1 from ${callActions} a where a.call_id = ${calls.id} and a.status = 'open')`,
         )
       }
 
@@ -252,7 +290,7 @@ export const apiRoutes: FastifyPluginAsyncZod = async (app) => {
           verdict: evaluations.verdict,
           overallScore: evaluations.overallScore,
           findingCount: sql<number>`(select count(*) from ${findings} f where f.call_id = ${calls.id})`,
-          actionCount: sql<number>`(select count(*) from ${segments} s where s.call_id = ${calls.id} and s.status = 'open')`,
+          actionCount: sql<number>`(select count(*) from ${callActions} a where a.call_id = ${calls.id} and a.status = 'open')`,
         })
         .from(calls)
         .innerJoin(agents, eq(calls.agentId, agents.id))
@@ -316,7 +354,12 @@ export const apiRoutes: FastifyPluginAsyncZod = async (app) => {
       findingCount: evaluation?.findings.length ?? 0,
       actionCount: evaluation?.segments.filter((s) => s.status === 'open').length ?? 0,
       transcript: call.transcript,
-      recordingUrl: call.recordingUrl,
+      // Recomputed on read when the row predates the metrics column, so old
+      // calls show mechanics too without needing a data migration.
+      metrics: call.metrics ?? computeTranscriptMetrics(call.transcript),
+      // Not recomputable on read — it costs a model call, so it is whatever
+      // the ingest pipeline stored, or nothing.
+      quality: call.quality ?? null,
       ingestStatus: call.ingestStatus,
       ingestError: call.ingestError,
       isMock: call.isMock,
@@ -378,31 +421,31 @@ export const apiRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     async (request) => {
       const conditions = [
-        eq(segments.locationId, request.session.locationId),
-        eq(segments.status, request.query.status),
+        eq(callActions.locationId, request.session.locationId),
+        eq(callActions.status, request.query.status),
       ]
-      if (request.query.actionType) conditions.push(eq(segments.actionType, request.query.actionType))
+      if (request.query.actionType) conditions.push(eq(callActions.actionType, request.query.actionType))
 
       const rows = await db
         .select({
-          id: segments.id,
-          callId: segments.callId,
-          turnStart: segments.turnStart,
-          turnEnd: segments.turnEnd,
-          actionType: segments.actionType,
-          reason: segments.reason,
-          severity: segments.severity,
-          status: segments.status,
+          id: callActions.id,
+          callId: callActions.callId,
+          turnStart: callActions.turnStart,
+          turnEnd: callActions.turnEnd,
+          actionType: callActions.actionType,
+          reason: callActions.reason,
+          severity: callActions.severity,
+          status: callActions.status,
           agentName: agents.name,
           contactPhone: calls.contactPhone,
           startedAt: calls.startedAt,
         })
-        .from(segments)
-        .innerJoin(calls, eq(segments.callId, calls.id))
-        .innerJoin(agents, eq(segments.agentId, agents.id))
+        .from(callActions)
+        .innerJoin(calls, eq(callActions.callId, calls.id))
+        .innerJoin(agents, eq(callActions.agentId, agents.id))
         .where(and(...conditions))
         .orderBy(
-          sql`case ${segments.severity} when 'high' then 0 when 'medium' then 1 else 2 end`,
+          sql`case ${callActions.severity} when 'high' then 0 when 'medium' then 1 else 2 end`,
           desc(calls.startedAt),
         )
         .limit(200)
@@ -421,13 +464,13 @@ export const apiRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     async (request, reply) => {
       const [updated] = await db
-        .update(segments)
+        .update(callActions)
         .set({
           status: request.body.status,
           resolvedAt: request.body.status === 'open' ? null : new Date(),
         })
-        .where(and(eq(segments.id, request.params.id), eq(segments.locationId, request.session.locationId)))
-        .returning({ id: segments.id, status: segments.status })
+        .where(and(eq(callActions.id, request.params.id), eq(callActions.locationId, request.session.locationId)))
+        .returning({ id: callActions.id, status: callActions.status })
       if (!updated) return reply.code(404).send({ error: 'action not found' })
       return updated
     },
@@ -509,7 +552,6 @@ export const apiRoutes: FastifyPluginAsyncZod = async (app) => {
         system: SUGGEST_CRITERIA_SYSTEM_PROMPT,
         user: `AGENT NAME: ${agent.name}\n\nAGENT PROMPT:\n"""\n${agent.promptSnapshot}\n"""`,
         schema: suggestedCriteriaSchema,
-        temperature: 0.2,
       })
       return result.data
     } catch (error) {

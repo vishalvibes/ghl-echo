@@ -4,8 +4,8 @@ import { RouterView, useRoute } from 'vue-router'
 import AppShell from './components/AppShell.vue'
 
 const route = useRoute()
-// The login gate renders bare — no sidebar until there is a session.
-const bare = computed(() => route.name === 'login')
+// Authentication and install-complete screens render outside the dashboard shell.
+const bare = computed(() => route.name === 'login' || route.name === 'installed')
 </script>
 
 <template>

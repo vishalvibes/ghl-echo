@@ -4,6 +4,7 @@ import {
   WINDOW_DAYS,
   type AgentSummary,
   type AnalyticsWindow,
+  type CallMetricTrendPoint,
   type CriterionBreakdown,
   type FailureMode,
   type FindingType,
@@ -17,7 +18,7 @@ import {
   criterionResults,
   evaluations,
   findings,
-  segments,
+  callActions,
 } from '../db/schema.js'
 
 /**
@@ -72,9 +73,9 @@ export async function computeKpis(scope: Scope, window: AnalyticsWindow): Promis
       .where(callScope(scope, since)),
     db
       .select({ n: count() })
-      .from(segments)
-      .innerJoin(calls, eq(segments.callId, calls.id))
-      .where(and(callScope(scope, since), eq(segments.status, 'open'))),
+      .from(callActions)
+      .innerJoin(calls, eq(callActions.callId, calls.id))
+      .where(and(callScope(scope, since), eq(callActions.status, 'open'))),
   ])
 
   const passRate = current.total ? current.pass / current.total : 0
@@ -88,6 +89,89 @@ export async function computeKpis(scope: Scope, window: AnalyticsWindow): Promis
     avgDurationSec: Math.round(Number(callAgg[0]?.avgDuration ?? 0)),
     passRateDelta: previous.total ? passRate - prevPassRate : 0,
   }
+}
+
+/**
+ * Build cumulative daily trends directly from per-call scalar signals.
+ *
+ * The database reduces calls to one row per day; the small daily result (at
+ * most 90 rows) is accumulated in memory. This keeps the query cheap today
+ * and leaves a clean boundary for replacing it with rollup tables later.
+ */
+export async function computeMetricTrend(
+  scope: Scope,
+  window: AnalyticsWindow,
+): Promise<CallMetricTrendPoint[]> {
+  const since = windowStart(window)
+  const day = sql<string>`to_char(date_trunc('day', ${calls.startedAt}), 'YYYY-MM-DD')`
+  const rows = await db
+    .select({
+      date: day,
+      calls: count(),
+      durationSum: sql<number>`coalesce(sum(${calls.durationSec}), 0)`,
+      talkSum: sql<number>`coalesce(sum(${calls.agentTalkRatio}), 0)`,
+      talkN: sql<number>`count(${calls.agentTalkRatio})`,
+      interruptionSum: sql<number>`coalesce(sum(${calls.interruptionRate}), 0)`,
+      interruptionN: sql<number>`count(${calls.interruptionRate})`,
+      repeatSum: sql<number>`coalesce(sum(${calls.callerRepeatRate}), 0)`,
+      repeatN: sql<number>`count(${calls.callerRepeatRate})`,
+      assessed: sql<number>`count(${calls.callCompleted})`,
+      completed: sql<number>`count(*) filter (where ${calls.callCompleted})`,
+      resolved: sql<number>`count(*) filter (where ${calls.taskOutcome} = 'resolved')`,
+      hangups: sql<number>`count(*) filter (where ${calls.prematureHangup})`,
+      scriptSum: sql<number>`coalesce(sum(${calls.scriptAdherenceScore}), 0)`,
+      scriptN: sql<number>`count(${calls.scriptAdherenceScore})`,
+      comprehensionSum: sql<number>`coalesce(sum(${calls.comprehensionScore}), 0)`,
+      comprehensionN: sql<number>`count(${calls.comprehensionScore})`,
+      toneSum: sql<number>`coalesce(sum(${calls.toneScore}), 0)`,
+      toneN: sql<number>`count(${calls.toneScore})`,
+      names: sql<number>`count(*) filter (where ${calls.capturedName})`,
+      emails: sql<number>`count(*) filter (where ${calls.capturedEmail})`,
+      phones: sql<number>`count(*) filter (where ${calls.capturedPhone})`,
+      positive: sql<number>`count(*) filter (where ${calls.callerSentiment} = 'positive')`,
+      neutral: sql<number>`count(*) filter (where ${calls.callerSentiment} = 'neutral')`,
+      negative: sql<number>`count(*) filter (where ${calls.callerSentiment} = 'negative')`,
+    })
+    .from(calls)
+    .where(callScope(scope, since))
+    .groupBy(day)
+    .orderBy(day)
+
+  const totals: Record<string, number> = {}
+  const add = (key: string, value: unknown) => {
+    totals[key] = (totals[key] ?? 0) + Number(value ?? 0)
+  }
+  const ratio = (sumKey: string, countKey: string) =>
+    totals[countKey] ? totals[sumKey]! / totals[countKey]! : null
+  const rounded = (value: number | null, precision = 3) =>
+    value == null ? null : Math.round(value * 10 ** precision) / 10 ** precision
+
+  return rows.map((row) => {
+    for (const [key, value] of Object.entries(row)) {
+      if (key !== 'date') add(key, value)
+    }
+    return {
+      date: row.date,
+      calls: Number(row.calls),
+      cumulativeCalls: totals.calls ?? 0,
+      avgDurationSec: rounded(ratio('durationSum', 'calls'), 0),
+      agentTalkShare: rounded(ratio('talkSum', 'talkN')),
+      interruptionRate: rounded(ratio('interruptionSum', 'interruptionN')),
+      callerRepeatRate: rounded(ratio('repeatSum', 'repeatN')),
+      completionRate: rounded(ratio('completed', 'assessed')),
+      resolvedRate: rounded(ratio('resolved', 'assessed')),
+      prematureHangupRate: rounded(ratio('hangups', 'assessed')),
+      scriptAdherence: rounded(ratio('scriptSum', 'scriptN'), 1),
+      comprehension: rounded(ratio('comprehensionSum', 'comprehensionN'), 1),
+      tone: rounded(ratio('toneSum', 'toneN'), 1),
+      nameCaptureRate: rounded(ratio('names', 'assessed')),
+      emailCaptureRate: rounded(ratio('emails', 'assessed')),
+      phoneCaptureRate: rounded(ratio('phones', 'assessed')),
+      positiveSentimentRate: rounded(ratio('positive', 'assessed')),
+      neutralSentimentRate: rounded(ratio('neutral', 'assessed')),
+      negativeSentimentRate: rounded(ratio('negative', 'assessed')),
+    }
+  })
 }
 
 export async function computeTrend(scope: Scope, window: AnalyticsWindow): Promise<TrendPoint[]> {

@@ -65,6 +65,10 @@ max output, 2026-02-16 knowledge cutoff:
 `gpt-5.6` is an alias for Sol. **Do not downgrade the default to an older
 `gpt-5*` model** — pick a tier within this family instead.
 
+The family accepts only the **default `temperature`**; any explicit value fails
+with `400 Unsupported value: 'temperature'`. `completeStructured` therefore
+never sends one — output consistency comes from the zod schema and the prompt.
+
 Note: the OpenAI SDK reads `OPENAI_BASE_URL` from the environment on its own.
 Keep it **commented out** in `.env` rather than set to an empty string — a
 blank value makes every call fail. `apps/api/src/lib/llm.ts` passes `baseURL`
@@ -111,10 +115,10 @@ standalone ──/login page──▶ POST /auth/login    HttpOnly cookie
 No cloud Supabase MCP. Query the **local** Postgres through the Supabase DB Docker container:
 
 ```bash
-docker exec supabase_db_echo psql -U postgres -d postgres -c "select id, name from agents;"
+docker exec supabase_db_template psql -U postgres -d postgres -c "select id, name from agents;"
 ```
 
-- Container name follows the repo folder (`supabase_db_<dirname>`) — find it with `docker ps --filter name=supabase_db`.
+- Container name comes from `project_id` in `supabase/config.toml`, **not** the repo folder — currently `supabase_db_template`. Find it with `docker ps --filter name=supabase_db`.
 - `psql` is **not** installed on the host — always go through `docker exec`.
 - Direct connection string: `postgresql://postgres:postgres@127.0.0.1:54322/postgres` (also the API's `DATABASE_URL` default).
 - App tables live in `public`; `auth.*` tables exist but are unused.
