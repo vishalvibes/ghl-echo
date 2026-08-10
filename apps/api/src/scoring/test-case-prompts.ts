@@ -48,11 +48,35 @@ Return THREE separate artifacts — do not blend them:
 2. criteria — objective checklist for a table. Each item: key (lower_snake_case),
    label (short), description (one clear pass condition). Judgable from a transcript.
 
-3. transcripts — 2-4 COMPLETE mock past calls. Each is a realistic phone conversation
-   with BOTH caller and agent turns. These stand in for calls a user might have had;
-   they are used only to score the current agent prompt. Write natural spoken dialogue,
-   not narration or criteria text. Vary the mocks (different phrasings / paths) while
-   still exercising this edge case.
+3. transcripts — 2-4 COMPLETE mock past calls. Each item declares its expected
+   outcome and contains a realistic phone conversation with BOTH caller and agent
+   turns. These stand in for calls a user might have had; they are used only to
+   score the current agent prompt. Write natural spoken dialogue, not narration or
+   criteria text. Vary the mocks while still exercising this edge case.
+
+The transcript pack should USUALLY be mixed:
+- Aim for at least one transcript with expectedOutcome "fail" and at least one
+  with expectedOutcome "pass" so the pack probes both strengths and weaknesses.
+- All-pass is allowed only when the current prompt genuinely and explicitly
+  handles the edge case across every varied path.
+- All-fail is allowed only when the prompt genuinely lacks the instructions
+  needed for every varied path.
+- Never invent an undeserved failure or pass merely to balance the pack.
+- A failing transcript must contain an observable agent mistake that clearly
+  violates one or more criteria. Do not merely make the caller difficult while
+  the agent still handles everything correctly.
+- For a failing transcript, expectedFailedCriteria lists the exact criterion keys
+  visibly violated by the agent's dialogue.
+- For a passing transcript, expectedFailedCriteria must be empty.
+- Do not default to making every transcript a successful best-practice example;
+  make each outcome follow from the current agent prompt and spoken dialogue.
+
+Transcript item shape:
+{
+  "expectedOutcome": "pass"|"fail",
+  "expectedFailedCriteria": ["criterion_key"],
+  "turns": [<turns>]
+}
 
 Transcript turn shape:
 { "id": <0-based int>, "role": "agent"|"caller"|"system", "text": "...", "startMs": null }
@@ -74,10 +98,34 @@ Return JSON only:
     }
   ],
   "transcripts": [
-    [
-      { "id": 0, "role": "agent", "text": "Hi, thanks for calling — how can I help?", "startMs": null },
-      { "id": 1, "role": "caller", "text": "I need help with missed-call follow-ups.", "startMs": null }
-    ]
+    {
+      "expectedOutcome": "fail",
+      "expectedFailedCriteria": ["clarifies_business_type"],
+      "turns": [
+        { "id": 0, "role": "agent", "text": "Hi, thanks for calling. How can I help?", "startMs": null },
+        { "id": 1, "role": "caller", "text": "I need help with missed-call follow-ups.", "startMs": null },
+        { "id": 2, "role": "agent", "text": "Great, I can book a discovery call now.", "startMs": null },
+        { "id": 3, "role": "caller", "text": "Do you need to know what kind of business I run?", "startMs": null },
+        { "id": 4, "role": "agent", "text": "No, that does not matter. Tuesday at two?", "startMs": null },
+        { "id": 5, "role": "caller", "text": "Sure.", "startMs": null },
+        { "id": 6, "role": "agent", "text": "You are booked for Tuesday at two.", "startMs": null },
+        { "id": 7, "role": "caller", "text": "Okay, goodbye.", "startMs": null }
+      ]
+    },
+    {
+      "expectedOutcome": "pass",
+      "expectedFailedCriteria": [],
+      "turns": [
+        { "id": 0, "role": "agent", "text": "Hi, thanks for calling. How can I help?", "startMs": null },
+        { "id": 1, "role": "caller", "text": "I need help with missed-call follow-ups.", "startMs": null },
+        { "id": 2, "role": "agent", "text": "What type of business do you run?", "startMs": null },
+        { "id": 3, "role": "caller", "text": "I would rather not say.", "startMs": null },
+        { "id": 4, "role": "agent", "text": "A broad category helps me route you correctly. Is it home services, health, or another field?", "startMs": null },
+        { "id": 5, "role": "caller", "text": "Home services.", "startMs": null },
+        { "id": 6, "role": "agent", "text": "Thank you. I can now find the right discovery slot.", "startMs": null },
+        { "id": 7, "role": "caller", "text": "Great.", "startMs": null }
+      ]
+    }
   ]
 }`
 

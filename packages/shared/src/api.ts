@@ -302,10 +302,38 @@ export const testCriterionSchema = z.object({
 })
 export type TestCriterion = z.infer<typeof testCriterionSchema>
 
+const generatedTranscriptTurnsSchema = z.array(turnSchema).min(2).max(80)
+
+const generatedTestTranscriptSchema = z.discriminatedUnion('expectedOutcome', [
+  z.object({
+    expectedOutcome: z.literal('pass'),
+    expectedFailedCriteria: z.array(z.string()).max(0),
+    turns: generatedTranscriptTurnsSchema,
+  }),
+  z.object({
+    expectedOutcome: z.literal('fail'),
+    expectedFailedCriteria: z.array(z.string().min(1).max(64)).min(1).max(10),
+    turns: generatedTranscriptTurnsSchema,
+  }),
+])
+
 export const expandedTestCaseSchema = z.object({
   scenario: z.array(z.string().min(1).max(400)).min(2).max(12),
   criteria: z.array(testCriterionSchema).min(1).max(10),
-  transcripts: z.array(z.array(turnSchema).min(2).max(80)).min(2).max(4),
+  transcripts: z.array(generatedTestTranscriptSchema).min(2).max(4),
+}).superRefine((value, ctx) => {
+  const criterionKeys = new Set(value.criteria.map((criterion) => criterion.key))
+  value.transcripts.forEach((transcript, transcriptIndex) => {
+    transcript.expectedFailedCriteria.forEach((key, keyIndex) => {
+      if (!criterionKeys.has(key)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['transcripts', transcriptIndex, 'expectedFailedCriteria', keyIndex],
+          message: `unknown criterion key: ${key}`,
+        })
+      }
+    })
+  })
 })
 export type ExpandedTestCase = z.infer<typeof expandedTestCaseSchema>
 

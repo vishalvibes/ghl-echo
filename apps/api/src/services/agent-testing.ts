@@ -144,7 +144,7 @@ export async function expandEdgeCase(args: {
     edgeCase: args.edgeCase,
     scenario: result.data.scenario,
     criteria: result.data.criteria,
-    transcripts: result.data.transcripts.map(normalizeTranscript),
+    transcripts: result.data.transcripts.map((transcript) => normalizeTranscript(transcript.turns)),
   }
 }
 

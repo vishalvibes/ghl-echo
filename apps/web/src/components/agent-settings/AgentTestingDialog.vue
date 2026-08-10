@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Plus, Trash2, X } from 'lucide-vue-next'
+import { Loader2, Plus, Trash2, X } from 'lucide-vue-next'
 import type { AgentListItem } from '../../composables/queries.js'
 import {
   useAgentTestCases,
@@ -49,6 +49,11 @@ const jobActive = computed(
   () => testingJob.value?.status === 'queued' || testingJob.value?.status === 'running',
 )
 const jobProgressLabel = computed(() => testingJob.value?.progress.label ?? null)
+const jobProgressPercent = computed(() => {
+  const progress = testingJob.value?.progress
+  if (!progress || progress.total <= 0) return null
+  return Math.min(100, Math.round((progress.done / progress.total) * 100))
+})
 
 const promptSuggestion = computed(() => testingJob.value?.suggestion ?? null)
 const suggestInFlight = computed(
@@ -94,6 +99,14 @@ const hasFailedCriteria = computed(() =>
   testCases.value.some((t) =>
     (t.results ?? []).some((r) => r.criteria.some((c) => !c.met)),
   ),
+)
+const hasCompletedTestRun = computed(
+  () =>
+    testCases.value.length > 0 &&
+    testCases.value.every(
+      (testCase) =>
+        testCase.results !== null && testCase.results.length === testCase.transcripts.length,
+    ),
 )
 
 /** Sync mutations only — background jobs use jobActive instead. */
@@ -452,10 +465,11 @@ function startFreshGeneration() {
                   <Plus class="size-3.5" aria-hidden="true" /> Add edge case
                 </button>
                 <button
-                  class="rounded-md border border-hairline px-2.5 py-1.5 text-sm font-medium hover:bg-plane disabled:opacity-50"
+                  class="inline-flex items-center gap-2 rounded-md border border-hairline px-2.5 py-1.5 text-sm font-medium hover:bg-plane disabled:opacity-50"
                   :disabled="controlsLocked || cleanedGoals.length === 0"
                   @click="generateEdgeCases"
                 >
+                  <Loader2 v-if="propose.isPending.value" class="size-3.5 animate-spin" aria-hidden="true" />
                   {{ propose.isPending.value ? 'Generating…' : 'Generate edge cases' }}
                 </button>
               </div>
@@ -499,10 +513,15 @@ function startFreshGeneration() {
                   Regenerate
                 </button>
                 <button
-                  class="rounded-md bg-series px-3 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+                  class="inline-flex items-center gap-2 rounded-md bg-series px-3 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
                   :disabled="testCases.length === 0 || controlsLocked"
                   @click="runTests"
                 >
+                  <Loader2
+                    v-if="(jobActive && testingJob?.type === 'run') || run.isPending.value"
+                    class="size-4 animate-spin"
+                    aria-hidden="true"
+                  />
                   {{
                     jobActive && testingJob?.type === 'run'
                       ? (jobProgressLabel ?? 'Running…')
@@ -512,10 +531,16 @@ function startFreshGeneration() {
                   }}
                 </button>
                 <button
-                  class="rounded-md border border-hairline px-3 py-2 text-sm font-medium hover:bg-plane disabled:opacity-50"
+                  v-if="hasCompletedTestRun"
+                  class="inline-flex items-center gap-2 rounded-md border border-hairline px-3 py-2 text-sm font-medium hover:bg-plane disabled:opacity-50"
                   :disabled="!hasFailedCriteria || controlsLocked"
                   @click="suggestPromptChanges"
                 >
+                  <Loader2
+                    v-if="suggestInFlight || suggestPrompt.isPending.value"
+                    class="size-4 animate-spin"
+                    aria-hidden="true"
+                  />
                   {{
                     suggestInFlight
                       ? (jobProgressLabel ?? 'Suggesting…')
@@ -529,16 +554,36 @@ function startFreshGeneration() {
 
             <div
               v-if="jobActive && testingJob?.type !== 'suggest'"
-              class="mt-4 rounded-lg border border-hairline bg-plane/40 px-3 py-2 text-sm text-ink-2"
+              class="mt-4 rounded-lg border border-hairline bg-plane/40 px-4 py-3"
+              role="status"
+              aria-live="polite"
             >
-              {{ jobProgressLabel ?? 'Working…' }}
+              <div class="flex items-center gap-3 text-sm text-ink-2">
+                <Loader2 class="size-4 shrink-0 animate-spin text-series" aria-hidden="true" />
+                <span class="min-w-0 flex-1 font-medium">{{ jobProgressLabel ?? 'Working…' }}</span>
+                <span v-if="jobProgressPercent !== null" class="shrink-0 tabular-nums text-ink-3">
+                  {{ jobProgressPercent }}%
+                </span>
+              </div>
+              <div
+                v-if="jobProgressPercent !== null"
+                class="mt-2.5 h-1.5 overflow-hidden rounded-full bg-hairline"
+              >
+                <div
+                  class="h-full rounded-full bg-series transition-[width] duration-300 ease-out"
+                  :style="{ width: `${jobProgressPercent}%` }"
+                />
+              </div>
             </div>
 
             <section
               v-if="suggestInFlight"
               class="mt-4 flex min-h-0 flex-col space-y-3 rounded-lg border border-hairline p-4"
             >
-              <h4 class="text-sm font-semibold">Suggested prompt</h4>
+              <div class="flex items-center gap-2">
+                <Loader2 class="size-4 animate-spin text-series" aria-hidden="true" />
+                <h4 class="text-sm font-semibold">Suggested prompt</h4>
+              </div>
               <p class="text-sm text-ink-2">{{ jobProgressLabel ?? 'Generating prompt revision…' }}</p>
               <div class="h-[min(55vh,28rem)] animate-pulse rounded-md border border-hairline bg-plane/50" />
             </section>
@@ -605,14 +650,8 @@ function startFreshGeneration() {
               class="mt-3 rounded-lg border border-dashed border-hairline"
               title="No test cases yet"
             />
-            <div
-              v-else-if="testCases.length === 0 && jobActive && testingJob?.type === 'confirm'"
-              class="mt-3 rounded-lg border border-dashed border-hairline p-4 text-sm text-ink-2"
-            >
-              {{ jobProgressLabel ?? 'Generating test cases…' }}
-            </div>
 
-            <ul v-else class="mt-4 space-y-3">
+            <ul v-else-if="testCases.length > 0" class="mt-4 space-y-3">
               <li
                 v-for="testCase in testCases"
                 :key="testCase.id"
@@ -766,10 +805,15 @@ function startFreshGeneration() {
             </button>
             <button
               v-else-if="step === 'edges'"
-              class="rounded-md bg-series px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+              class="inline-flex items-center gap-2 rounded-md bg-series px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
               :disabled="cleanedEdges.length === 0 || controlsLocked"
               @click="generateTestCases"
             >
+              <Loader2
+                v-if="(jobActive && testingJob?.type === 'confirm') || confirm.isPending.value"
+                class="size-4 animate-spin"
+                aria-hidden="true"
+              />
               {{
                 jobActive && testingJob?.type === 'confirm'
                   ? (jobProgressLabel ?? 'Generating…')

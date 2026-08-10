@@ -39,21 +39,85 @@ describe('agent testing schemas', () => {
         },
       ],
       transcripts: [
-        [
-          { id: 0, role: 'agent', text: 'Hi, how can I help?', startMs: null },
-          { id: 1, role: 'caller', text: 'Just book me something.', startMs: null },
-        ],
-        [
-          { id: 0, role: 'agent', text: 'Thanks for calling.', startMs: null },
-          { id: 1, role: 'caller', text: 'I need follow-ups.', startMs: null },
-          { id: 2, role: 'agent', text: 'Great — what industry are you in?', startMs: null },
-          { id: 3, role: 'caller', text: 'Prefer not to say.', startMs: null },
-        ],
+        {
+          expectedOutcome: 'fail',
+          expectedFailedCriteria: ['asked_business_type'],
+          turns: [
+            { id: 0, role: 'agent', text: 'Hi, how can I help?', startMs: null },
+            { id: 1, role: 'caller', text: 'Just book me something.', startMs: null },
+          ],
+        },
+        {
+          expectedOutcome: 'pass',
+          expectedFailedCriteria: [],
+          turns: [
+            { id: 0, role: 'agent', text: 'Thanks for calling.', startMs: null },
+            { id: 1, role: 'caller', text: 'I need follow-ups.', startMs: null },
+            { id: 2, role: 'agent', text: 'Great — what industry are you in?', startMs: null },
+            { id: 3, role: 'caller', text: 'Prefer not to say.', startMs: null },
+          ],
+        },
       ],
     })
     expect(expanded.criteria).toHaveLength(1)
     expect(expanded.transcripts).toHaveLength(2)
     expect(expanded.scenario).toHaveLength(2)
+  })
+
+  it('allows an exceptional all-pass pack when every transcript earns it', () => {
+    const result = expandedTestCaseSchema.safeParse({
+      scenario: ['Caller asks for help.', 'Agent responds.'],
+      criteria: [
+        { key: 'offers_help', label: 'Offers help', description: 'Agent offers useful help.' },
+      ],
+      transcripts: [
+        {
+          expectedOutcome: 'pass',
+          expectedFailedCriteria: [],
+          turns: [
+            { id: 0, role: 'caller', text: 'Can you help?', startMs: null },
+            { id: 1, role: 'agent', text: 'Yes.', startMs: null },
+          ],
+        },
+        {
+          expectedOutcome: 'pass',
+          expectedFailedCriteria: [],
+          turns: [
+            { id: 0, role: 'caller', text: 'Can you help?', startMs: null },
+            { id: 1, role: 'agent', text: 'Absolutely.', startMs: null },
+          ],
+        },
+      ],
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('allows an exceptional all-fail pack when the prompt lacks the behavior', () => {
+    const result = expandedTestCaseSchema.safeParse({
+      scenario: ['Caller asks for help.', 'Agent refuses twice.'],
+      criteria: [
+        { key: 'offers_help', label: 'Offers help', description: 'Agent offers useful help.' },
+      ],
+      transcripts: [
+        {
+          expectedOutcome: 'fail',
+          expectedFailedCriteria: ['offers_help'],
+          turns: [
+            { id: 0, role: 'caller', text: 'Can you help?', startMs: null },
+            { id: 1, role: 'agent', text: 'No.', startMs: null },
+          ],
+        },
+        {
+          expectedOutcome: 'fail',
+          expectedFailedCriteria: ['offers_help'],
+          turns: [
+            { id: 0, role: 'caller', text: 'I need assistance.', startMs: null },
+            { id: 1, role: 'agent', text: 'I cannot help.', startMs: null },
+          ],
+        },
+      ],
+    })
+    expect(result.success).toBe(true)
   })
 
   it('accepts a serialized test case list item', () => {
