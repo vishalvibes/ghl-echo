@@ -335,13 +335,6 @@ export const testCaseSchema = z.object({
 })
 export type TestCase = z.infer<typeof testCaseSchema>
 
-export const testCaseListSchema = z.object({
-  goals: z.array(z.string()),
-  prompt: z.string().nullable(),
-  testCases: z.array(testCaseSchema),
-})
-export type TestCaseList = z.infer<typeof testCaseListSchema>
-
 /** LLM-revised agent prompt grounded in failed synthetic tests. */
 export const suggestedTestPromptSchema = z.object({
   summary: z.string().min(1).max(2000),
@@ -355,6 +348,35 @@ export const suggestTestPromptResponseSchema = z.object({
   summary: z.string(),
 })
 export type SuggestTestPromptResponse = z.infer<typeof suggestTestPromptResponseSchema>
+
+/** One active background job for confirm / run / suggest (stored on agents). */
+export const agentTestingJobSchema = z.object({
+  id: z.uuid(),
+  type: z.enum(['confirm', 'run', 'suggest']),
+  status: z.enum(['queued', 'running', 'done', 'failed']),
+  progress: z.object({
+    done: z.number().int().nonnegative(),
+    total: z.number().int().nonnegative(),
+    label: z.string().max(200),
+  }),
+  error: z.string().nullable(),
+  suggestion: suggestTestPromptResponseSchema.nullable(),
+  updatedAt: z.iso.datetime(),
+})
+export type AgentTestingJob = z.infer<typeof agentTestingJobSchema>
+
+export const testCaseListSchema = z.object({
+  goals: z.array(z.string()),
+  prompt: z.string().nullable(),
+  testCases: z.array(testCaseSchema),
+  testingJob: agentTestingJobSchema.nullable(),
+})
+export type TestCaseList = z.infer<typeof testCaseListSchema>
+
+export const testingJobEnqueueResponseSchema = z.object({
+  testingJob: agentTestingJobSchema,
+})
+export type TestingJobEnqueueResponse = z.infer<typeof testingJobEnqueueResponseSchema>
 
 export const agentPromptSchema = z.object({
   prompt: z.string().min(1).max(100_000),

@@ -1,1 +1,0 @@
-ALTER TABLE "test_cases" ADD COLUMN "feedback" text;

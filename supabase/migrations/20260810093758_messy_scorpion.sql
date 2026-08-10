@@ -3,13 +3,10 @@ CREATE TABLE "test_cases" (
 	"location_id" uuid NOT NULL,
 	"agent_id" uuid NOT NULL,
 	"edge_case" text NOT NULL,
-	"edge_case_detail" text NOT NULL,
-	"transcript" jsonb NOT NULL,
+	"scenario" jsonb NOT NULL,
 	"criteria" jsonb NOT NULL,
-	"pass_threshold" integer DEFAULT 70 NOT NULL,
-	"partial_threshold" integer DEFAULT 40 NOT NULL,
-	"verdict" "verdict",
-	"overall_score" integer,
+	"transcripts" jsonb NOT NULL,
+	"results" jsonb,
 	"last_run_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );

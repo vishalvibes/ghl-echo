@@ -5,6 +5,7 @@ import type { AgentListItem } from '../../composables/queries.js'
 import {
   useAgentTestCases,
   useConfirmEdgeCases,
+  useDismissTestingJob,
   useProposeEdgeCases,
   useRunTestCases,
   useSaveAgentGoals,
@@ -28,11 +29,13 @@ const propose = useProposeEdgeCases(agentId)
 const confirm = useConfirmEdgeCases(agentId)
 const run = useRunTestCases(agentId)
 const suggestPrompt = useSuggestTestPrompt(agentId)
+const dismissJob = useDismissTestingJob(agentId)
 const savePrompt = useSaveAgentPrompt(agentId)
 
 type Step = 'goals' | 'edges' | 'tests'
 const step = ref<Step>('goals')
 const skippedToTests = ref(false)
+const confirmDoneNotified = ref(false)
 
 const goals = ref<string[]>([])
 const goalsDirty = ref(false)
@@ -40,38 +43,72 @@ const edgeCases = ref<string[]>([])
 const expandedId = ref<string | null>(null)
 const expandedMockIndex = ref<number | null>(null)
 const actionError = ref('')
-const promptSuggestion = ref<{
-  currentPrompt: string
-  revisedPrompt: string
-  summary: string
-} | null>(null)
+
+const testingJob = computed(() => data.value?.testingJob ?? null)
+const jobActive = computed(
+  () => testingJob.value?.status === 'queued' || testingJob.value?.status === 'running',
+)
+const jobProgressLabel = computed(() => testingJob.value?.progress.label ?? null)
+
+const promptSuggestion = computed(() => testingJob.value?.suggestion ?? null)
+const suggestInFlight = computed(
+  () =>
+    jobActive.value &&
+    testingJob.value?.type === 'suggest',
+)
 
 watch(
   data,
   (value) => {
     if (!value) return
     if (!goalsDirty.value) goals.value = [...value.goals]
-    // Existing packs skip goals/edge generation.
-    if (!skippedToTests.value && value.testCases.length > 0) {
+    const job = value.testingJob
+    const jobBusy = job?.status === 'queued' || job?.status === 'running'
+    // Existing packs or an in-flight job → jump to the tests step.
+    if (!skippedToTests.value && (value.testCases.length > 0 || jobBusy)) {
       skippedToTests.value = true
       step.value = 'tests'
       expandedId.value = value.testCases[0]?.id ?? null
+    }
+    // Confirm job finished — land on tests with fresh packs.
+    if (
+      job?.type === 'confirm' &&
+      job.status === 'done' &&
+      value.testCases.length > 0 &&
+      !confirmDoneNotified.value
+    ) {
+      confirmDoneNotified.value = true
+      step.value = 'tests'
+      expandedId.value = value.testCases[0]?.id ?? null
+      emit('done', `Created ${value.testCases.length} test cases`)
+    }
+    if (job?.status === 'failed' && job.error) {
+      actionError.value = job.error
     }
   },
   { immediate: true },
 )
 
 const testCases = computed(() => data.value?.testCases ?? [])
-const hasScoredResults = computed(() => testCases.value.some((t) => (t.results?.length ?? 0) > 0))
-const busy = computed(
+const hasFailedCriteria = computed(() =>
+  testCases.value.some((t) =>
+    (t.results ?? []).some((r) => r.criteria.some((c) => !c.met)),
+  ),
+)
+
+/** Sync mutations only — background jobs use jobActive instead. */
+const syncBusy = computed(
   () =>
     saveGoals.isPending.value ||
     propose.isPending.value ||
     confirm.isPending.value ||
     run.isPending.value ||
     suggestPrompt.isPending.value ||
-    savePrompt.isPending.value,
+    savePrompt.isPending.value ||
+    dismissJob.isPending.value,
 )
+
+const controlsLocked = computed(() => syncBusy.value || jobActive.value)
 
 const cleanedGoals = computed(() => goals.value.map((g) => g.trim()).filter(Boolean))
 const cleanedEdges = computed(() => edgeCases.value.map((e) => e.trim()).filter(Boolean))
@@ -189,46 +226,57 @@ async function generateTestCases() {
     actionError.value = 'Add or generate at least one edge case.'
     return
   }
+  if (testCases.value.length > 0) {
+    if (
+      !window.confirm(
+        `This replaces ${testCases.value.length} existing test pack${testCases.value.length === 1 ? '' : 's'}. Continue?`,
+      )
+    ) {
+      return
+    }
+  }
   try {
     await confirm.mutateAsync(cleanedEdges.value)
-    promptSuggestion.value = null
+    confirmDoneNotified.value = false
     step.value = 'tests'
-    emit('done', `Created ${cleanedEdges.value.length} test cases`)
-  } catch (error) {
-    actionError.value =
-      (error as { status?: number }).status === 503
-        ? 'LLM is disabled.'
-        : 'Could not generate test cases.'
-  }
-}
-
-async function runTests() {
-  actionError.value = ''
-  promptSuggestion.value = null
-  try {
-    await run.mutateAsync()
-    const first = testCases.value[0]
-    if (first) expandedId.value = first.id
-  } catch (error) {
-    actionError.value =
-      (error as { status?: number }).status === 503
-        ? 'LLM is disabled.'
-        : 'Could not run test cases.'
-  }
-}
-
-async function suggestPromptChanges() {
-  actionError.value = ''
-  try {
-    promptSuggestion.value = await suggestPrompt.mutateAsync()
   } catch (error) {
     const status = (error as { status?: number }).status
     actionError.value =
       status === 503
         ? 'LLM is disabled.'
         : status === 409
-          ? 'Run tests with failures first, then suggest changes.'
-          : 'Could not suggest prompt changes.'
+          ? 'Another testing job is already running.'
+          : 'Could not start test case generation.'
+  }
+}
+
+async function runTests() {
+  actionError.value = ''
+  try {
+    await run.mutateAsync()
+  } catch (error) {
+    const status = (error as { status?: number }).status
+    actionError.value =
+      status === 503
+        ? 'LLM is disabled.'
+        : status === 409
+          ? 'Another testing job is already running.'
+          : 'Could not start test run.'
+  }
+}
+
+async function suggestPromptChanges() {
+  actionError.value = ''
+  try {
+    await suggestPrompt.mutateAsync()
+  } catch (error) {
+    const status = (error as { status?: number }).status
+    actionError.value =
+      status === 503
+        ? 'LLM is disabled.'
+        : status === 409
+          ? 'Run tests with failures first, or wait for the current job.'
+          : 'Could not start prompt suggestion.'
   }
 }
 
@@ -238,9 +286,23 @@ async function applyPromptSuggestion() {
   actionError.value = ''
   try {
     await savePrompt.mutateAsync(promptSuggestion.value.revisedPrompt)
+    try {
+      await dismissJob.mutateAsync()
+    } catch {
+      /* suggestion already applied */
+    }
     emit('done', 'Prompt updated — re-run tests to verify')
   } catch {
     actionError.value = 'Could not apply prompt.'
+  }
+}
+
+async function dismissTerminalJob() {
+  actionError.value = ''
+  try {
+    await dismissJob.mutateAsync()
+  } catch {
+    actionError.value = 'Could not dismiss job status.'
   }
 }
 
@@ -267,10 +329,10 @@ function mockFeedback(testCaseId: string, transcriptIndex: number): string | nul
 }
 
 function requestClose() {
-  if (busy.value) return
+  if (syncBusy.value) return
   if (
     (step.value === 'goals' && goalsDirty.value) ||
-    (step.value === 'edges' && edgeCases.value.length > 0 && testCases.value.length === 0)
+    (step.value === 'edges' && edgeCases.value.length > 0 && testCases.value.length === 0 && !jobActive.value)
   ) {
     if (!window.confirm('Discard progress and close?')) return
   }
@@ -287,7 +349,6 @@ function goBack() {
 }
 
 function startFreshGeneration() {
-  promptSuggestion.value = null
   step.value = 'goals'
 }
 </script>
@@ -303,7 +364,7 @@ function startFreshGeneration() {
         role="dialog"
         aria-modal="true"
         aria-labelledby="agent-testing-title"
-        class="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-hairline bg-surface shadow-2xl"
+        class="flex max-h-[95vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-hairline bg-surface shadow-2xl"
       >
         <header class="flex shrink-0 items-center justify-between gap-4 border-b border-hairline px-5 py-4">
           <div>
@@ -340,15 +401,12 @@ function startFreshGeneration() {
               <h3 class="text-sm font-semibold">Goals</h3>
               <button
                 class="inline-flex items-center gap-1.5 rounded-md border border-hairline px-2.5 py-1.5 text-sm hover:bg-plane"
-                :disabled="busy"
+                :disabled="controlsLocked"
                 @click="addGoal"
               >
                 <Plus class="size-3.5" aria-hidden="true" /> Add goal
               </button>
             </div>
-            <p class="mt-1 text-sm text-ink-3">
-              What should this agent achieve? Edge cases will be derived from these goals.
-            </p>
 
             <EmptyState
               v-if="goals.length === 0"
@@ -388,31 +446,26 @@ function startFreshGeneration() {
               <div class="flex flex-wrap items-center gap-2">
                 <button
                   class="inline-flex items-center gap-1.5 rounded-md border border-hairline px-2.5 py-1.5 text-sm hover:bg-plane disabled:opacity-50"
-                  :disabled="busy"
+                  :disabled="controlsLocked"
                   @click="addEdgeCase"
                 >
                   <Plus class="size-3.5" aria-hidden="true" /> Add edge case
                 </button>
                 <button
                   class="rounded-md border border-hairline px-2.5 py-1.5 text-sm font-medium hover:bg-plane disabled:opacity-50"
-                  :disabled="busy || cleanedGoals.length === 0"
+                  :disabled="controlsLocked || cleanedGoals.length === 0"
                   @click="generateEdgeCases"
                 >
                   {{ propose.isPending.value ? 'Generating…' : 'Generate edge cases' }}
                 </button>
               </div>
             </div>
-            <p class="mt-1 text-sm text-ink-3">
-              One-line failure conditions to test. Generate from goals, or write your own.
-            </p>
 
             <EmptyState
               v-if="edgeCases.length === 0"
               class="mt-3 rounded-lg border border-dashed border-hairline"
               title="No edge cases yet"
-            >
-              <p class="mt-1 text-sm text-ink-3">Generate from goals or add one manually.</p>
-            </EmptyState>
+            />
 
             <ul v-else class="mt-4 space-y-2">
               <li v-for="(edge, index) in edgeCases" :key="index" class="flex items-center gap-2">
@@ -440,49 +493,83 @@ function startFreshGeneration() {
                 <button
                   v-if="testCases.length > 0"
                   class="rounded-md border border-hairline px-3 py-2 text-sm font-medium hover:bg-plane disabled:opacity-50"
-                  :disabled="busy"
+                  :disabled="controlsLocked"
                   @click="startFreshGeneration"
                 >
                   Regenerate
                 </button>
                 <button
                   class="rounded-md bg-series px-3 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
-                  :disabled="testCases.length === 0 || busy"
+                  :disabled="testCases.length === 0 || controlsLocked"
                   @click="runTests"
                 >
-                  {{ run.isPending.value ? 'Running…' : 'Run tests' }}
+                  {{
+                    jobActive && testingJob?.type === 'run'
+                      ? (jobProgressLabel ?? 'Running…')
+                      : run.isPending.value
+                        ? 'Starting…'
+                        : 'Run tests'
+                  }}
                 </button>
                 <button
                   class="rounded-md border border-hairline px-3 py-2 text-sm font-medium hover:bg-plane disabled:opacity-50"
-                  :disabled="!hasScoredResults || busy"
+                  :disabled="!hasFailedCriteria || controlsLocked"
                   @click="suggestPromptChanges"
                 >
-                  {{ suggestPrompt.isPending.value ? 'Suggesting…' : 'Suggest prompt changes' }}
+                  {{
+                    suggestInFlight
+                      ? (jobProgressLabel ?? 'Suggesting…')
+                      : suggestPrompt.isPending.value
+                        ? 'Starting…'
+                        : 'Suggest prompt changes'
+                  }}
                 </button>
               </div>
             </div>
-            <p class="mt-1 text-sm text-ink-3">
-              Run scores each mock call against criteria. Suggest prompt changes after you have failures.
-            </p>
+
+            <div
+              v-if="jobActive && testingJob?.type !== 'suggest'"
+              class="mt-4 rounded-lg border border-hairline bg-plane/40 px-3 py-2 text-sm text-ink-2"
+            >
+              {{ jobProgressLabel ?? 'Working…' }}
+            </div>
 
             <section
-              v-if="promptSuggestion"
-              class="mt-4 space-y-3 rounded-lg border border-hairline p-3"
+              v-if="suggestInFlight"
+              class="mt-4 flex min-h-0 flex-col space-y-3 rounded-lg border border-hairline p-4"
+            >
+              <h4 class="text-sm font-semibold">Suggested prompt</h4>
+              <p class="text-sm text-ink-2">{{ jobProgressLabel ?? 'Generating prompt revision…' }}</p>
+              <div class="h-[min(55vh,28rem)] animate-pulse rounded-md border border-hairline bg-plane/50" />
+            </section>
+
+            <section
+              v-else-if="promptSuggestion"
+              class="mt-4 flex min-h-0 flex-col space-y-3 rounded-lg border border-hairline p-4"
             >
               <div class="flex flex-wrap items-start justify-between gap-2">
-                <div>
+                <div class="min-w-0 flex-1">
                   <h4 class="text-sm font-semibold">Suggested prompt</h4>
                   <p class="mt-1 text-sm text-ink-2">{{ promptSuggestion.summary }}</p>
                 </div>
-                <button
-                  class="rounded-md bg-series px-3 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
-                  :disabled="busy"
-                  @click="applyPromptSuggestion"
-                >
-                  {{ savePrompt.isPending.value ? 'Applying…' : 'Apply' }}
-                </button>
+                <div class="flex flex-wrap items-center gap-2">
+                  <button
+                    class="rounded-md border border-hairline px-3 py-2 text-sm font-medium hover:bg-plane disabled:opacity-50"
+                    :disabled="controlsLocked"
+                    @click="dismissTerminalJob"
+                  >
+                    Dismiss
+                  </button>
+                  <button
+                    class="rounded-md bg-series px-3 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+                    :disabled="controlsLocked"
+                    @click="applyPromptSuggestion"
+                  >
+                    {{ savePrompt.isPending.value ? 'Applying…' : 'Apply' }}
+                  </button>
+                </div>
               </div>
-              <div class="max-h-64 overflow-auto rounded-md border border-hairline bg-plane/30 p-2 font-mono text-sm">
+              <div class="h-[min(55vh,28rem)] overflow-auto rounded-md border border-hairline bg-plane/30 p-3 font-mono text-sm leading-relaxed">
                 <div
                   v-for="(line, index) in promptDiffLines"
                   :key="index"
@@ -499,11 +586,31 @@ function startFreshGeneration() {
               </div>
             </section>
 
+            <div
+              v-else-if="testingJob?.status === 'failed'"
+              class="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-critical/30 bg-critical/5 px-3 py-2 text-sm"
+            >
+              <p class="text-critical">{{ testingJob.error ?? 'Testing job failed.' }}</p>
+              <button
+                class="rounded-md border border-hairline bg-surface px-3 py-1.5 font-medium hover:bg-plane"
+                :disabled="dismissJob.isPending.value"
+                @click="dismissTerminalJob"
+              >
+                Dismiss
+              </button>
+            </div>
+
             <EmptyState
-              v-if="testCases.length === 0"
+              v-if="testCases.length === 0 && !jobActive"
               class="mt-3 rounded-lg border border-dashed border-hairline"
               title="No test cases yet"
             />
+            <div
+              v-else-if="testCases.length === 0 && jobActive && testingJob?.type === 'confirm'"
+              class="mt-3 rounded-lg border border-dashed border-hairline p-4 text-sm text-ink-2"
+            >
+              {{ jobProgressLabel ?? 'Generating test cases…' }}
+            </div>
 
             <ul v-else class="mt-4 space-y-3">
               <li
@@ -634,7 +741,7 @@ function startFreshGeneration() {
           <button
             v-if="step !== 'goals'"
             class="rounded-md border border-hairline px-3 py-2 text-sm font-medium hover:bg-plane disabled:opacity-50"
-            :disabled="busy"
+            :disabled="syncBusy"
             @click="goBack"
           >
             Back
@@ -642,7 +749,7 @@ function startFreshGeneration() {
           <button
             v-else
             class="rounded-md border border-hairline px-3 py-2 text-sm font-medium hover:bg-plane"
-            :disabled="busy"
+            :disabled="syncBusy"
             @click="requestClose"
           >
             Cancel
@@ -652,7 +759,7 @@ function startFreshGeneration() {
             <button
               v-if="step === 'goals'"
               class="rounded-md bg-series px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
-              :disabled="cleanedGoals.length === 0 || busy"
+              :disabled="cleanedGoals.length === 0 || controlsLocked"
               @click="continueFromGoals"
             >
               {{ saveGoals.isPending.value ? 'Saving…' : 'Continue' }}
@@ -660,18 +767,24 @@ function startFreshGeneration() {
             <button
               v-else-if="step === 'edges'"
               class="rounded-md bg-series px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
-              :disabled="cleanedEdges.length === 0 || busy"
+              :disabled="cleanedEdges.length === 0 || controlsLocked"
               @click="generateTestCases"
             >
-              {{ confirm.isPending.value ? 'Generating…' : 'Generate test cases' }}
+              {{
+                jobActive && testingJob?.type === 'confirm'
+                  ? (jobProgressLabel ?? 'Generating…')
+                  : confirm.isPending.value
+                    ? 'Starting…'
+                    : 'Generate test cases'
+              }}
             </button>
             <button
               v-else
               class="rounded-md border border-hairline px-3 py-2 text-sm font-medium hover:bg-plane"
-              :disabled="busy"
+              :disabled="syncBusy"
               @click="emit('close')"
             >
-              Done
+              {{ jobActive ? 'Close (job continues)' : 'Done' }}
             </button>
           </div>
         </footer>

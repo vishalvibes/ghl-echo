@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  agentTestingJobSchema,
   confirmEdgeCasesSchema,
   expandedTestCaseSchema,
   proposedEdgeCasesSchema,
   agentGoalsSchema,
+  testCaseListSchema,
   testCaseSchema,
 } from './api.js'
 
@@ -74,5 +76,26 @@ describe('agent testing schemas', () => {
     })
     expect(row.results).toBeNull()
     expect(row.transcripts).toHaveLength(1)
+  })
+
+  it('accepts a testing job and list payload with job', () => {
+    const job = agentTestingJobSchema.parse({
+      id: '33333333-3333-4333-8333-333333333333',
+      type: 'run',
+      status: 'running',
+      progress: { done: 2, total: 8, label: 'Judging mock 2/8' },
+      error: null,
+      suggestion: null,
+      updatedAt: new Date().toISOString(),
+    })
+    expect(job.progress.done).toBe(2)
+
+    const list = testCaseListSchema.parse({
+      goals: ['Book calls'],
+      prompt: 'Be helpful.',
+      testCases: [],
+      testingJob: job,
+    })
+    expect(list.testingJob?.type).toBe('run')
   })
 })

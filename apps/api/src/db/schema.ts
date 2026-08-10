@@ -13,7 +13,13 @@ import {
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core'
-import type { CallQuality, Criterion, TranscriptMetrics, Turn } from '@copilot/shared'
+import type {
+  AgentTestingJob,
+  CallQuality,
+  Criterion,
+  TranscriptMetrics,
+  Turn,
+} from '@copilot/shared'
 
 /** Objective checklist item for synthetic agent tests (UI table). */
 export type TestCriterion = {
@@ -140,6 +146,11 @@ export const agents = pgTable(
     prompt: text('prompt'),
     /** User-authored testing goals that drive edge-case generation. */
     goals: jsonb('goals').$type<string[]>().notNull().default([]),
+    /**
+     * One active (or last terminal) background testing job: confirm / run /
+     * suggest. Cleared via dismiss or overwritten on the next enqueue.
+     */
+    testingJob: jsonb('testing_job').$type<AgentTestingJob | null>(),
     /**
      * Copy of the agent's system prompt at last sync. The recommendation
      * engine diffs against this, so it must be the text the calls actually

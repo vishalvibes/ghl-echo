@@ -10,10 +10,9 @@ import type {
   Recommendations,
   Scorecard,
   ScorecardDraft,
-  SuggestTestPromptResponse,
   SuggestedCriteria,
-  TestCase,
   TestCaseList,
+  TestingJobEnqueueResponse,
 } from '@copilot/shared'
 import { api } from '../lib/api.js'
 
@@ -212,6 +211,10 @@ export function useAgentTestCases(agentId: Ref<string>) {
     queryKey: computed(() => ['test-cases', agentId.value]),
     queryFn: () => api<TestCaseList>(`/api/agents/${agentId.value}/test-cases`),
     enabled: computed(() => agentId.value.length > 0),
+    refetchInterval: (query) => {
+      const status = query.state.data?.testingJob?.status
+      return status === 'queued' || status === 'running' ? 2_000 : false
+    },
   })
 }
 
@@ -243,11 +246,14 @@ export function useConfirmEdgeCases(agentId: Ref<string>) {
   const client = useQueryClient()
   return useMutation({
     mutationFn: (edgeCases: string[]) =>
-      api<{ testCases: TestCase[] }>(`/api/agents/${agentId.value}/test-cases/confirm`, {
+      api<TestingJobEnqueueResponse>(`/api/agents/${agentId.value}/test-cases/confirm`, {
         method: 'POST',
         body: JSON.stringify({ edgeCases }),
       }),
-    onSuccess: () => {
+    onSuccess: (data) => {
+      client.setQueryData<TestCaseList>(['test-cases', agentId.value], (prev) =>
+        prev ? { ...prev, testingJob: data.testingJob } : prev,
+      )
       void client.invalidateQueries({ queryKey: ['test-cases', agentId.value] })
     },
   })
@@ -257,23 +263,50 @@ export function useRunTestCases(agentId: Ref<string>) {
   const client = useQueryClient()
   return useMutation({
     mutationFn: () =>
-      api<{ testCases: TestCase[] }>(`/api/agents/${agentId.value}/test-cases/run`, {
+      api<TestingJobEnqueueResponse>(`/api/agents/${agentId.value}/test-cases/run`, {
         method: 'POST',
         body: JSON.stringify({}),
       }),
-    onSuccess: () => {
+    onSuccess: (data) => {
+      client.setQueryData<TestCaseList>(['test-cases', agentId.value], (prev) =>
+        prev ? { ...prev, testingJob: data.testingJob } : prev,
+      )
       void client.invalidateQueries({ queryKey: ['test-cases', agentId.value] })
     },
   })
 }
 
 export function useSuggestTestPrompt(agentId: Ref<string>) {
+  const client = useQueryClient()
   return useMutation({
     mutationFn: () =>
-      api<SuggestTestPromptResponse>(`/api/agents/${agentId.value}/test-cases/suggest-prompt`, {
+      api<TestingJobEnqueueResponse>(`/api/agents/${agentId.value}/test-cases/suggest-prompt`, {
         method: 'POST',
         body: JSON.stringify({}),
       }),
+    onSuccess: (data) => {
+      client.setQueryData<TestCaseList>(['test-cases', agentId.value], (prev) =>
+        prev ? { ...prev, testingJob: data.testingJob } : prev,
+      )
+      void client.invalidateQueries({ queryKey: ['test-cases', agentId.value] })
+    },
+  })
+}
+
+export function useDismissTestingJob(agentId: Ref<string>) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: () =>
+      api<{ testingJob: null }>(`/api/agents/${agentId.value}/test-cases/job/dismiss`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      }),
+    onSuccess: () => {
+      client.setQueryData<TestCaseList>(['test-cases', agentId.value], (prev) =>
+        prev ? { ...prev, testingJob: null } : prev,
+      )
+      void client.invalidateQueries({ queryKey: ['test-cases', agentId.value] })
+    },
   })
 }
 

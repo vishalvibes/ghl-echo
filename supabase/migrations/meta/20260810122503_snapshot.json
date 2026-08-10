@@ -1,6 +1,6 @@
 {
-  "id": "4b0c1cde-3cdc-4afe-a63e-8fcc90120365",
-  "prevId": "819a95c5-265c-44dd-8b8c-df6bb94e9e22",
+  "id": "f819bb7d-ee48-46da-8e26-7463d4be102d",
+  "prevId": "0fd8be4a-be10-4f23-82e9-dd8459cd7844",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -45,6 +45,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'[]'::jsonb"
+        },
+        "testing_job": {
+          "name": "testing_job",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
         },
         "prompt_snapshot": {
           "name": "prompt_snapshot",
@@ -1663,14 +1669,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "edge_case_detail": {
-          "name": "edge_case_detail",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "transcript": {
-          "name": "transcript",
+        "scenario": {
+          "name": "scenario",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true
@@ -1681,16 +1681,15 @@
           "primaryKey": false,
           "notNull": true
         },
-        "verdict": {
-          "name": "verdict",
-          "type": "verdict",
-          "typeSchema": "public",
+        "transcripts": {
+          "name": "transcripts",
+          "type": "jsonb",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
-        "overall_score": {
-          "name": "overall_score",
-          "type": "integer",
+        "results": {
+          "name": "results",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },

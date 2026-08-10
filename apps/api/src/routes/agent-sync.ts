@@ -2,11 +2,13 @@ import { and, eq } from 'drizzle-orm'
 import { db } from '../db/client.js'
 import { agents, type LocationRow } from '../db/schema.js'
 import { fetchVoiceAgents } from '../clients/highlevel.js'
+import { defaultAgentPrompt } from '../lib/default-prompt.js'
 
 /**
  * Mirror the location's Voice AI agents into our `agents` table and snapshot
- * their prompts. New agents get no scorecard — criteria are a user decision
- * (or an LLM suggestion the user approves), never invented silently.
+ * their prompts. New agents get the default testing prompt seeded; criteria
+ * are a user decision (or an LLM suggestion the user approves), never invented
+ * silently.
  */
 export async function syncAgentsForLocation(location: LocationRow): Promise<{ synced: number }> {
   const remote = await fetchVoiceAgents(location)
@@ -28,6 +30,7 @@ export async function syncAgentsForLocation(location: LocationRow): Promise<{ sy
         locationId: location.id,
         ghlAgentId: item.id,
         name: item.name,
+        prompt: defaultAgentPrompt(),
         promptSnapshot: item.prompt ?? null,
         promptSyncedAt: item.prompt ? new Date() : null,
       })

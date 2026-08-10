@@ -4,6 +4,7 @@ import { agents, calls, locations, scorecards } from './schema.js'
 import { FIXTURE_AGENTS } from '../fixtures/agents.js'
 import { FIXTURE_CALLS } from '../fixtures/calls.js'
 import { persistEvaluation } from '../calls/evaluate.js'
+import { defaultAgentPrompt } from '../lib/default-prompt.js'
 import { computeTranscriptMetrics } from '@copilot/shared'
 
 /**
@@ -61,6 +62,7 @@ export async function seed(): Promise<void> {
           locationId,
           ghlAgentId: fixture.ghlAgentId,
           name: fixture.name,
+          prompt: fixture.prompt || defaultAgentPrompt(),
           promptSnapshot: fixture.prompt,
           promptSyncedAt: new Date(),
         })

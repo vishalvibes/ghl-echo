@@ -19,29 +19,8 @@
     {
       "idx": 2,
       "version": "7",
-      "when": 1786355331098,
-      "tag": "20260810094851_greedy_iceman",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1786355374277,
-      "tag": "20260810094934_panoramic_valeria_richards",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1786355429808,
-      "tag": "20260810095029_loud_crystal",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1786356480000,
-      "tag": "20260810100800_test_cases_multi_transcript",
+      "when": 1786364703366,
+      "tag": "20260810122503_opposite_ken_ellis",
       "breakpoints": true
     }
   ]

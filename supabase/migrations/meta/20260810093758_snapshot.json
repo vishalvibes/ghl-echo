@@ -1,5 +1,5 @@
 {
-  "id": "819a95c5-265c-44dd-8b8c-df6bb94e9e22",
+  "id": "0fd8be4a-be10-4f23-82e9-dd8459cd7844",
   "prevId": "4933e600-1531-4d90-ac03-8015bdb2bbd8",
   "version": "7",
   "dialect": "postgresql",
@@ -1663,14 +1663,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "edge_case_detail": {
-          "name": "edge_case_detail",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "transcript": {
-          "name": "transcript",
+        "scenario": {
+          "name": "scenario",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true
@@ -1681,30 +1675,15 @@
           "primaryKey": false,
           "notNull": true
         },
-        "pass_threshold": {
-          "name": "pass_threshold",
-          "type": "integer",
+        "transcripts": {
+          "name": "transcripts",
+          "type": "jsonb",
           "primaryKey": false,
-          "notNull": true,
-          "default": 70
+          "notNull": true
         },
-        "partial_threshold": {
-          "name": "partial_threshold",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 40
-        },
-        "verdict": {
-          "name": "verdict",
-          "type": "verdict",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "overall_score": {
-          "name": "overall_score",
-          "type": "integer",
+        "results": {
+          "name": "results",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },

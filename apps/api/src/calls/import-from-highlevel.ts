@@ -3,6 +3,7 @@ import { computeTranscriptMetrics, type CallDirection, type CallOutcome } from '
 import { db } from '../db/client.js'
 import { agents, calls, type LocationRow } from '../db/schema.js'
 import { fetchCallLogs, fetchTranscript, fetchVoiceAgent } from '../clients/highlevel.js'
+import { defaultAgentPrompt } from '../lib/default-prompt.js'
 import { normalizePlainText, normalizeTranscript, type RawTranscriptEntry } from './normalize.js'
 
 /**
@@ -111,6 +112,7 @@ async function resolveAgent(location: LocationRow, ghlAgentId: string) {
       locationId: location.id,
       ghlAgentId: remote.id,
       name: remote.name,
+      prompt: defaultAgentPrompt(),
       promptSnapshot: remote.prompt ?? null,
       promptSyncedAt: remote.prompt ? new Date() : null,
     })
