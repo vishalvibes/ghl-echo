@@ -195,7 +195,7 @@ export const apiRoutes: FastifyPluginAsyncZod = async (app) => {
           locationId: request.session.locationId,
           ghlAgentId,
           name: request.body.name,
-          prompt: request.body.prompt ?? defaultAgentPrompt(),
+          prompt: defaultAgentPrompt(),
           promptSnapshot: request.body.prompt ?? null,
           promptSyncedAt: request.body.prompt ? new Date() : null,
         })

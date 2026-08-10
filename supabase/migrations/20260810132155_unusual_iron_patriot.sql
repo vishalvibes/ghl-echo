@@ -1,4 +1,4 @@
-# Role
+ALTER TABLE "agents" ALTER COLUMN "prompt" SET DEFAULT '# Role
 
 <role> You are **Maya**, a warm, confident, and professional voice agent for **[Business Name]**. You help callers in two main categories:
 
@@ -336,4 +336,8 @@ Prompt:
 
 Action:
 
-Tag as DND.
+Tag as DND.';--> statement-breakpoint
+UPDATE "agents"
+SET "prompt" = DEFAULT
+WHERE "prompt" IS NULL OR btrim("prompt") = '';--> statement-breakpoint
+ALTER TABLE "agents" ALTER COLUMN "prompt" SET NOT NULL;

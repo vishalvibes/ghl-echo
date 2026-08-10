@@ -62,7 +62,7 @@ export async function seed(): Promise<void> {
           locationId,
           ghlAgentId: fixture.ghlAgentId,
           name: fixture.name,
-          prompt: fixture.prompt || defaultAgentPrompt(),
+          prompt: defaultAgentPrompt(),
           promptSnapshot: fixture.prompt,
           promptSyncedAt: new Date(),
         })

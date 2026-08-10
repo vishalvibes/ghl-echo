@@ -20,6 +20,7 @@ import type {
   TranscriptMetrics,
   Turn,
 } from '@copilot/shared'
+import { defaultAgentPrompt } from '../lib/default-prompt.js'
 
 /** Objective checklist item for synthetic agent tests (UI table). */
 export type TestCriterion = {
@@ -141,9 +142,10 @@ export const agents = pgTable(
     name: text('name').notNull(),
     /**
      * Canonical agent prompt used for synthetic testing and generation.
-     * Nullable until backfilled (e.g. from default-prompt.md).
+     * The database default is the final safety net for every insertion path;
+     * application flows also set it explicitly for clarity.
      */
-    prompt: text('prompt'),
+    prompt: text('prompt').notNull().default(defaultAgentPrompt()),
     /** User-authored testing goals that drive edge-case generation. */
     goals: jsonb('goals').$type<string[]>().notNull().default([]),
     /**
