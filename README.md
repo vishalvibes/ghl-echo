@@ -1,106 +1,113 @@
-# Voice AI Observability Copilot
+# Echo
 
-An **Agent Observability Copilot** for HighLevel Voice AI agents. It automates
-the *Monitor* and *Analyze* phases: ingest call transcripts, judge every call
-with an LLM, optionally apply additional per-agent scorecard criteria, and turn
-evidence-backed failures into ranked prompt fixes.
+Echo is an observability copilot for HighLevel Voice AI agents. It helps teams
+understand whether calls are healthy, whether an agent followed its goals, and
+what should improve next.
 
-```
-GHL call ends ──webhook──▶ API ──queue──▶ LLM judge ──▶ scores / findings / actions
-                                                              │
-        HighLevel iframe ◀── Vue dashboard ◀── aggregations ──┘
-```
+## Who it is for
 
-| Part | Stack | Dir |
-|------|-------|-----|
-| API + workers | Node 22, Fastify 5, Drizzle, Inngest, zod | `apps/api/` |
-| Dashboard | Vue 3, Vite, Tailwind v4, TanStack Query | `apps/web/` |
-| Shared contracts | zod schemas (scorecards, judge output, API) | `packages/shared/` |
-| Database | Postgres via the local Supabase CLI stack | `supabase/` |
+- **Operations and QA teams** reviewing many calls without reading every
+  transcript manually.
+- **Conversation designers** checking whether an agent follows its intended
+  script or business goal.
+- **Team leads** turning repeated call failures into concrete coaching or prompt
+  changes.
 
-## Prerequisites
+## The main loop
 
-- [Docker](https://www.docker.com/) **running** (local Postgres)
-- Node 22+, `pnpm`, and the `supabase` CLI on your PATH
-- tmux (for `make dev`; auto-installed via brew if missing)
-
-## Quick start
-
-```bash
-make install        # pnpm install at repo root (never inside apps/*)
-cp apps/api/.env.example apps/api/.env    # defaults work for fixture mode
-make dev            # Supabase + API + dashboard + Inngest in one tmux session
-```
-
-`make install` is the only install entrypoint. App-level `node_modules/` folders
-are pnpm symlink stubs into the shared root store — not duplicate installs.
-Use `make reinstall` for a clean wipe + reinstall.
-
-`make dev` seeds a **demo location** — three reference agents with handcrafted
-calls and evaluations — so the full dashboard works with **no HighLevel account
-and no OpenAI key**. Open http://localhost:5173 and sign in with:
-
-- email: `demo@copilot.dev`
-- password: `copilot123`
-
-(Configurable via `DEMO_LOGIN_EMAIL` / `DEMO_LOGIN_PASSWORD` in `apps/api/.env`.
-Inside the HighLevel iframe the login screen is skipped — the GHL context
-exchange signs the user in automatically.)
-
-To evaluate calls with the real judge, set in `apps/api/.env`:
-
-```bash
-OPENAI_ENABLED=true
-OPENAI_API_KEY=sk-...
+```text
+Define agent goals
+        |
+        v
+Collect completed calls
+        |
+        v
+Analyze baseline quality + configured criteria
+        |
+        v
+Review evidence and human actions
+        |
+        v
+Improve the script or prompt
+        |
+        +-------------------- repeat --------------------+
 ```
 
-## What's functional vs mocked
+Baseline monitoring is available for every call. Pass/fail verdicts and review
+flags appear only after someone configures criteria for that agent.
 
-| Piece | Status |
-|---|---|
-| Transcript normalization, judging, scoring, storage | functional |
-| Always-on call quality monitoring | functional; custom criteria are optional |
-| Dashboard (overview, agent detail, calls, call evidence, actions, scorecards) | functional |
-| LLM judge + recommendations + criteria generation | functional (needs OpenAI key) |
-| GHL OAuth install flow, webhook ingest, backfill | implemented, needs marketplace app credentials |
-| Demo call data | mocked (seeded fixtures, flagged `is_mock`) |
-| Prompt patch write-back to GHL | mocked (copy-to-clipboard by design) |
+## Backend flows
 
-## Commands
+Realtime calls:
 
-| Command | What |
-|---|---|
-| `make dev` / `make stop` | full stack up/down (tmux) |
-| `make reset` | re-run migrations + reseed demo data |
-| `make seed` | reseed demo data only (idempotent) |
-| `make check` | typecheck + unit tests, all packages |
-| `make migrate` | generate a migration from `apps/api/src/db/schema.ts` |
-
-## HighLevel installation
-
-1. Create a marketplace app (sub-account distribution) with scopes
-   `conversations.readonly`, `locations.readonly`, and the Voice AI read scopes.
-2. Set the OAuth redirect to `<your-host>/auth/oauth/callback` and put the client
-   id/secret in `apps/api/.env`.
-3. Add a **Custom Page / Custom Menu Link** pointing at the deployed `apps/web`
-   origin — the dashboard exchanges the iframe context for a session and scopes
-   every read to that location.
-4. Point the app's call-completed webhook at `<your-host>/webhooks/ghl`.
-   Install triggers an API backfill of available call logs. New calls arrive
-   through webhooks.
-
-## EC2 deployment
-
-The production host runs four isolated services: PostgreSQL, the Fastify API,
-the self-hosted Inngest server, and Nginx serving the Vue build. Templates live
-in `deploy/ec2/`; application secrets stay in the ignored `apps/api/.env`.
-
-After pulling a release on the host:
-
-```bash
-pnpm install --frozen-lockfile
-pnpm --filter @copilot/web build
-set -a; source apps/api/.env; set +a
-./scripts/migrate-production.sh
-sudo systemctl restart echo-inngest echo-api nginx
+```text
+HighLevel webhook
+            |
+            v
+Validate and normalize call data
+            |
+            v
+Store call, transcript, and agent context
+            |
+            v
+Compute baseline metrics
+            |
+            v
+Evaluate configured criteria (when present)
+            |
+            v
+Aggregate results for the dashboard and review queue
 ```
+
+Historical calls:
+
+```text
+HighLevel call history
+          |
+          v
+Backfill and normalize missing calls
+          |
+          v
+Store call, transcript, and agent context
+          |
+          v
+Compute baseline metrics
+          |
+          v
+Evaluate configured criteria (when present)
+          |
+          v
+Aggregate results for dashboards and historical review
+```
+
+## Core features
+
+| Feature | What it does |
+|---------|--------------|
+| Call ingestion | Collects completed Voice AI calls from HighLevel webhooks and call-log backfill. |
+| Baseline monitoring | Shows completion, sentiment, talk share, turns, interruptions, and other call signals. |
+| Agent settings | Lets a user define manual pass/fail criteria in one compact row-and-modal workflow per agent. |
+| Evidence-linked evaluation | Shows each criterion result, rationale, score, and supporting transcript turns. |
+| Review actions | Highlights call segments for follow-up, training, or compliance review; actions can be resolved or dismissed. |
+| Recommendations | Groups recurring failures and suggests prompt or script changes linked to evidence calls. |
+
+## Install in HighLevel
+
+1. Open the [Echo HighLevel install link](https://marketplace.gohighlevel.com/v2/oauth/chooselocation?response_type=code&redirect_uri=https%3A%2F%2Fecho.52-66-252-246.sslip.io%2Fauth%2Foauth%2Fcallback&client_id=6a6f24bb03ccacf3eff3b462-msbpkoyp&scope=conversations.readonly+conversations%2Fmessage.readonly+reports.readonly+agent-studio.readonly+conversation-ai.readonly+voice-ai-dashboard.readonly+voice-ai-agents.readonly+voice-ai-agent-goals.readonly&version_id=6a6f24bb03ccacf3eff3b462) and choose the location where Echo should be installed.
+2. Authorize the location. Echo then syncs the Voice AI agents and begins collecting calls.
+
+## Tech stack
+
+| Layer | Technology |
+|-------|------------|
+| Frontend | Vue 3, Vite, Tailwind CSS, TanStack Query |
+| Backend | Node.js, Fastify, Drizzle, Inngest, Zod |
+| AI | Structured LLM evaluation and recommendation generation |
+| Data | PostgreSQL via Supabase |
+
+## Future features
+
+- Expanded metrics and more customizable quality signals.
+- Pre-computation tables for faster dashboard aggregation; intentionally not
+  included in this MVP.
+- Optional prompt write-back after a user reviews and approves a recommendation.
