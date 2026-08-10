@@ -15,6 +15,20 @@ import {
 } from 'drizzle-orm/pg-core'
 import type { CallQuality, Criterion, TranscriptMetrics, Turn } from '@copilot/shared'
 
+/** Objective checklist item for synthetic agent tests (UI table). */
+export type TestCriterion = {
+  key: string
+  label: string
+  description: string
+}
+
+/** Per-mock scoring from the last test run. */
+export type TestCaseTranscriptResult = {
+  transcriptIndex: number
+  criteria: Array<{ key: string; met: boolean; rationale: string }>
+  feedback: string | null
+}
+
 /**
  * Every row in this schema is scoped to a HighLevel location (sub-account).
  * `locationId` is the tenant key and is present on every queryable table so a
@@ -120,6 +134,13 @@ export const agents = pgTable(
     ghlAgentId: varchar('ghl_agent_id', { length: 64 }).notNull(),
     name: text('name').notNull(),
     /**
+     * Canonical agent prompt used for synthetic testing and generation.
+     * Nullable until backfilled (e.g. from default-prompt.md).
+     */
+    prompt: text('prompt'),
+    /** User-authored testing goals that drive edge-case generation. */
+    goals: jsonb('goals').$type<string[]>().notNull().default([]),
+    /**
      * Copy of the agent's system prompt at last sync. The recommendation
      * engine diffs against this, so it must be the text the calls actually
      * ran under — not whatever the prompt says today.
@@ -155,6 +176,39 @@ export const scorecards = pgTable(
   (t) => [
     uniqueIndex('scorecards_agent_version_idx').on(t.agentId, t.version),
     index('scorecards_active_idx').on(t.agentId, t.isActive),
+  ],
+)
+
+/**
+ * Synthetic agent tests. One row per confirmed edge case: scenario outline,
+ * objective criteria, and multiple mock past-call transcripts for scoring.
+ */
+export const testCases = pgTable(
+  'test_cases',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    locationId: uuid('location_id')
+      .notNull()
+      .references(() => locations.id, { onDelete: 'cascade' }),
+    agentId: uuid('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    /** Short one-line failure / situation label. */
+    edgeCase: text('edge_case').notNull(),
+    /** Step-by-step situation outline (not the score rubric). */
+    scenario: jsonb('scenario').$type<string[]>().notNull(),
+    /** Objective criteria for the UI table and judge. */
+    criteria: jsonb('criteria').$type<TestCriterion[]>().notNull(),
+    /** Multiple mock past-call transcripts (caller + agent turns). */
+    transcripts: jsonb('transcripts').$type<Turn[][]>().notNull(),
+    /** Last run: score matrix per mock transcript. */
+    results: jsonb('results').$type<TestCaseTranscriptResult[]>(),
+    lastRunAt: timestamp('last_run_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('test_cases_agent_created_idx').on(t.agentId, t.createdAt),
+    index('test_cases_location_agent_idx').on(t.locationId, t.agentId),
   ],
 )
 
@@ -428,7 +482,13 @@ export const webhookEventsRelations = relations(webhookEvents, ({ one }) => ({
 export const agentsRelations = relations(agents, ({ one, many }) => ({
   location: one(locations, { fields: [agents.locationId], references: [locations.id] }),
   scorecards: many(scorecards),
+  testCases: many(testCases),
   calls: many(calls),
+}))
+
+export const testCasesRelations = relations(testCases, ({ one }) => ({
+  location: one(locations, { fields: [testCases.locationId], references: [locations.id] }),
+  agent: one(agents, { fields: [testCases.agentId], references: [agents.id] }),
 }))
 
 export const callsRelations = relations(calls, ({ one, many }) => ({
@@ -466,6 +526,7 @@ export type CallActionInsert = typeof callActions.$inferInsert
 export type CallRow = typeof calls.$inferSelect
 export type AgentRow = typeof agents.$inferSelect
 export type ScorecardRow = typeof scorecards.$inferSelect
+export type TestCaseRow = typeof testCases.$inferSelect
 export type LocationRow = typeof locations.$inferSelect
 export type EvaluationRow = typeof evaluations.$inferSelect
 export type WebhookEventRow = typeof webhookEvents.$inferSelect

@@ -272,3 +272,91 @@ export const suggestedCriteriaSchema = z.object({
   reasoning: z.string(),
 })
 export type SuggestedCriteria = z.infer<typeof suggestedCriteriaSchema>
+
+// --- Agent synthetic testing ------------------------------------------------
+
+export const agentGoalsSchema = z.object({
+  goals: z.array(z.string().min(1).max(500)).max(20),
+})
+export type AgentGoals = z.infer<typeof agentGoalsSchema>
+
+export const proposedEdgeCasesSchema = z.object({
+  edgeCases: z.array(z.string().min(1).max(300)).min(1).max(12),
+})
+export type ProposedEdgeCases = z.infer<typeof proposedEdgeCasesSchema>
+
+export const confirmEdgeCasesSchema = z.object({
+  edgeCases: z.array(z.string().min(1).max(300)).min(1).max(12),
+})
+export type ConfirmEdgeCases = z.infer<typeof confirmEdgeCasesSchema>
+
+/** One expanded test produced when the user confirms an edge case. */
+export const testCriterionSchema = z.object({
+  key: z
+    .string()
+    .min(1)
+    .max(64)
+    .regex(/^[a-z][a-z0-9_]*$/, 'key must be lower_snake_case'),
+  label: z.string().min(1).max(120),
+  description: z.string().min(1).max(1000),
+})
+export type TestCriterion = z.infer<typeof testCriterionSchema>
+
+export const expandedTestCaseSchema = z.object({
+  scenario: z.array(z.string().min(1).max(400)).min(2).max(12),
+  criteria: z.array(testCriterionSchema).min(1).max(10),
+  transcripts: z.array(z.array(turnSchema).min(2).max(80)).min(2).max(4),
+})
+export type ExpandedTestCase = z.infer<typeof expandedTestCaseSchema>
+
+export const testCaseTranscriptResultSchema = z.object({
+  transcriptIndex: z.number().int().nonnegative(),
+  criteria: z.array(
+    z.object({
+      key: z.string(),
+      met: z.boolean(),
+      rationale: z.string(),
+    }),
+  ),
+  feedback: z.string().nullable(),
+})
+export type TestCaseTranscriptResult = z.infer<typeof testCaseTranscriptResultSchema>
+
+export const testCaseSchema = z.object({
+  id: z.uuid(),
+  agentId: z.uuid(),
+  edgeCase: z.string(),
+  scenario: z.array(z.string()),
+  criteria: z.array(testCriterionSchema),
+  transcripts: z.array(z.array(turnSchema)),
+  results: z.array(testCaseTranscriptResultSchema).nullable(),
+  lastRunAt: z.iso.datetime().nullable(),
+  createdAt: z.iso.datetime(),
+})
+export type TestCase = z.infer<typeof testCaseSchema>
+
+export const testCaseListSchema = z.object({
+  goals: z.array(z.string()),
+  prompt: z.string().nullable(),
+  testCases: z.array(testCaseSchema),
+})
+export type TestCaseList = z.infer<typeof testCaseListSchema>
+
+/** LLM-revised agent prompt grounded in failed synthetic tests. */
+export const suggestedTestPromptSchema = z.object({
+  summary: z.string().min(1).max(2000),
+  revisedPrompt: z.string().min(1).max(100_000),
+})
+export type SuggestedTestPrompt = z.infer<typeof suggestedTestPromptSchema>
+
+export const suggestTestPromptResponseSchema = z.object({
+  currentPrompt: z.string(),
+  revisedPrompt: z.string(),
+  summary: z.string(),
+})
+export type SuggestTestPromptResponse = z.infer<typeof suggestTestPromptResponseSchema>
+
+export const agentPromptSchema = z.object({
+  prompt: z.string().min(1).max(100_000),
+})
+export type AgentPromptBody = z.infer<typeof agentPromptSchema>

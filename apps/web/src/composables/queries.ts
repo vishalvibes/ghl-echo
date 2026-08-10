@@ -6,10 +6,14 @@ import type {
   CallList,
   IntegrationStatus,
   Overview,
+  ProposedEdgeCases,
   Recommendations,
   Scorecard,
   ScorecardDraft,
+  SuggestTestPromptResponse,
   SuggestedCriteria,
+  TestCase,
+  TestCaseList,
 } from '@copilot/shared'
 import { api } from '../lib/api.js'
 
@@ -200,6 +204,91 @@ export function useSuggestCriteria(agentId: Ref<string>) {
   return useMutation({
     mutationFn: () =>
       api<SuggestedCriteria>(`/api/agents/${agentId.value}/scorecard/suggest`, { method: 'POST' }),
+  })
+}
+
+export function useAgentTestCases(agentId: Ref<string>) {
+  return useQuery({
+    queryKey: computed(() => ['test-cases', agentId.value]),
+    queryFn: () => api<TestCaseList>(`/api/agents/${agentId.value}/test-cases`),
+    enabled: computed(() => agentId.value.length > 0),
+  })
+}
+
+export function useSaveAgentGoals(agentId: Ref<string>) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (goals: string[]) =>
+      api<{ id: string; goals: string[] }>(`/api/agents/${agentId.value}/goals`, {
+        method: 'PATCH',
+        body: JSON.stringify({ goals }),
+      }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['test-cases', agentId.value] })
+    },
+  })
+}
+
+export function useProposeEdgeCases(agentId: Ref<string>) {
+  return useMutation({
+    mutationFn: (goals: string[]) =>
+      api<ProposedEdgeCases>(`/api/agents/${agentId.value}/test-cases/propose`, {
+        method: 'POST',
+        body: JSON.stringify({ goals }),
+      }),
+  })
+}
+
+export function useConfirmEdgeCases(agentId: Ref<string>) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (edgeCases: string[]) =>
+      api<{ testCases: TestCase[] }>(`/api/agents/${agentId.value}/test-cases/confirm`, {
+        method: 'POST',
+        body: JSON.stringify({ edgeCases }),
+      }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['test-cases', agentId.value] })
+    },
+  })
+}
+
+export function useRunTestCases(agentId: Ref<string>) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: () =>
+      api<{ testCases: TestCase[] }>(`/api/agents/${agentId.value}/test-cases/run`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['test-cases', agentId.value] })
+    },
+  })
+}
+
+export function useSuggestTestPrompt(agentId: Ref<string>) {
+  return useMutation({
+    mutationFn: () =>
+      api<SuggestTestPromptResponse>(`/api/agents/${agentId.value}/test-cases/suggest-prompt`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      }),
+  })
+}
+
+export function useSaveAgentPrompt(agentId: Ref<string>) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (prompt: string) =>
+      api<{ id: string; prompt: string }>(`/api/agents/${agentId.value}/prompt`, {
+        method: 'PATCH',
+        body: JSON.stringify({ prompt }),
+      }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['test-cases', agentId.value] })
+      void client.invalidateQueries({ queryKey: ['agent', agentId.value] })
+    },
   })
 }
 

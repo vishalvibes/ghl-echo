@@ -6,10 +6,21 @@ import {
   computeTranscriptMetrics,
   scorecardDraftSchema,
   suggestedCriteriaSchema,
+  agentGoalsSchema,
+  proposedEdgeCasesSchema,
+  confirmEdgeCasesSchema,
+  expandedTestCaseSchema,
+  suggestedTestPromptSchema,
+  agentPromptSchema,
   windowSchema,
   type CallDetail,
   type CallListItem,
+  type Criterion,
   type Overview,
+  type TestCase,
+  type TestCriterion,
+  type TestCaseTranscriptResult,
+  type Turn,
 } from '@copilot/shared'
 import { db } from '../db/client.js'
 import { DEMO_LOCATION_GHL_ID } from '../db/seed.js'
@@ -21,6 +32,7 @@ import {
   locations,
   scorecards,
   callActions,
+  testCases,
 } from '../db/schema.js'
 import { env } from '../config/env.js'
 import { EVENT_BACKFILL_REQUESTED, inngestClient } from '../clients/inngest.js'
@@ -34,7 +46,15 @@ import { getRecommendations } from '../insights/recommend.js'
 import { requireSession } from '../lib/session.js'
 import { completeStructured } from '../lib/llm.js'
 import { SUGGEST_CRITERIA_SYSTEM_PROMPT } from '../scoring/prompts.js'
-import { judgeCall } from '../scoring/judge.js'
+import {
+  buildExpandTestCaseUserPrompt,
+  buildProposeEdgeCasesUserPrompt,
+  buildSuggestTestPromptUser,
+  EXPAND_TEST_CASE_SYSTEM_PROMPT,
+  PROPOSE_EDGE_CASES_SYSTEM_PROMPT,
+  SUGGEST_TEST_PROMPT_SYSTEM,
+} from '../scoring/test-case-prompts.js'
+import { judgeCall, type JudgeResult } from '../scoring/judge.js'
 import {
   computeAgentSummaries,
   computeCriterionBreakdown,
@@ -48,6 +68,55 @@ import {
 const windowQuery = z.object({ window: windowSchema.default('7d') })
 const overviewQuery = windowQuery.extend({ agentId: z.uuid().optional() })
 const idParam = z.object({ id: z.uuid() })
+
+/** Fixed verdict cutoffs for synthetic tests — not stored per edge case. */
+const TEST_CASE_PASS_THRESHOLD = 70
+const TEST_CASE_PARTIAL_THRESHOLD = 40
+
+function serializeTestCase(row: typeof testCases.$inferSelect): TestCase {
+  return {
+    id: row.id,
+    agentId: row.agentId,
+    edgeCase: row.edgeCase,
+    scenario: row.scenario,
+    criteria: row.criteria,
+    transcripts: row.transcripts,
+    results: row.results ?? null,
+    lastRunAt: row.lastRunAt?.toISOString() ?? null,
+    createdAt: row.createdAt.toISOString(),
+  }
+}
+
+/** Map table criteria into the judge's Criterion shape. */
+function toJudgeCriteria(criteria: TestCriterion[]): Criterion[] {
+  return criteria.map((c) => ({
+    key: c.key,
+    label: c.label,
+    type: 'boolean' as const,
+    weight: 1,
+    definition: c.description,
+    failWhen: null,
+    enabled: true,
+  }))
+}
+
+/**
+ * One objective line on what to fix. Pass → null. Otherwise prefer the top
+ * finding title, then the first unmet criterion rationale.
+ */
+function improvementFeedback(judged: JudgeResult): string | null {
+  if (judged.verdict === 'pass') return null
+  const finding = judged.output.findings[0]
+  if (finding?.title?.trim()) return finding.title.trim().slice(0, 200)
+  const unmet = judged.output.criteria.find((c) => !c.met)
+  if (unmet?.rationale?.trim()) return unmet.rationale.trim().slice(0, 200)
+  return 'Agent missed one or more test criteria.'
+}
+
+/** Force contiguous 0-based ids so judge evidence citations stay valid. */
+function normalizeTranscript(turns: Turn[]): Turn[] {
+  return turns.map((turn, id) => ({ ...turn, id }))
+}
 
 export const apiRoutes: FastifyPluginAsyncZod = async (app) => {
   // Every /api route requires an iframe session; tenant comes from the cookie.
@@ -631,6 +700,293 @@ export const apiRoutes: FastifyPluginAsyncZod = async (app) => {
         }
         throw error
       }
+    },
+  )
+
+  // --- Synthetic agent testing ----------------------------------------------
+
+  app.get('/api/agents/:id/test-cases', { schema: { params: idParam } }, async (request, reply) => {
+    const agent = await db.query.agents.findFirst({
+      where: and(eq(agents.id, request.params.id), eq(agents.locationId, request.session.locationId)),
+    })
+    if (!agent) return reply.code(404).send({ error: 'agent not found' })
+
+    const rows = await db.query.testCases.findMany({
+      where: and(eq(testCases.agentId, agent.id), eq(testCases.locationId, request.session.locationId)),
+      orderBy: (t, { asc }) => [asc(t.createdAt)],
+    })
+
+    return {
+      goals: agent.goals ?? [],
+      prompt: agent.prompt,
+      testCases: rows.map(serializeTestCase),
+    }
+  })
+
+  app.patch(
+    '/api/agents/:id/goals',
+    { schema: { params: idParam, body: agentGoalsSchema } },
+    async (request, reply) => {
+      const [updated] = await db
+        .update(agents)
+        .set({ goals: request.body.goals })
+        .where(and(eq(agents.id, request.params.id), eq(agents.locationId, request.session.locationId)))
+        .returning({ id: agents.id, goals: agents.goals })
+      if (!updated) return reply.code(404).send({ error: 'agent not found' })
+      return updated
+    },
+  )
+
+  app.post(
+    '/api/agents/:id/test-cases/propose',
+    { schema: { params: idParam, body: agentGoalsSchema } },
+    async (request, reply) => {
+      const agent = await db.query.agents.findFirst({
+        where: and(eq(agents.id, request.params.id), eq(agents.locationId, request.session.locationId)),
+      })
+      if (!agent) return reply.code(404).send({ error: 'agent not found' })
+
+      const goals = request.body.goals.map((g) => g.trim()).filter(Boolean)
+      if (goals.length === 0) return reply.code(409).send({ error: 'goals required' })
+      if (!agent.prompt?.trim()) return reply.code(409).send({ error: 'agent has no prompt' })
+
+      try {
+        const result = await completeStructured({
+          system: PROPOSE_EDGE_CASES_SYSTEM_PROMPT,
+          user: buildProposeEdgeCasesUserPrompt({
+            agentName: agent.name,
+            agentPrompt: agent.prompt,
+            goals,
+          }),
+          schema: proposedEdgeCasesSchema,
+          maxOutputTokens: 2000,
+        })
+        return result.data
+      } catch (error) {
+        if ((error as { code?: string }).code === 'LLM_DISABLED') {
+          return reply.code(503).send({ error: 'llm_disabled' })
+        }
+        throw error
+      }
+    },
+  )
+
+  app.post(
+    '/api/agents/:id/test-cases/confirm',
+    { schema: { params: idParam, body: confirmEdgeCasesSchema } },
+    async (request, reply) => {
+      const agent = await db.query.agents.findFirst({
+        where: and(eq(agents.id, request.params.id), eq(agents.locationId, request.session.locationId)),
+      })
+      if (!agent) return reply.code(404).send({ error: 'agent not found' })
+      if (!agent.goals?.length) return reply.code(409).send({ error: 'agent has no goals' })
+      if (!agent.prompt?.trim()) return reply.code(409).send({ error: 'agent has no prompt' })
+
+      try {
+        const expanded = await Promise.all(
+          request.body.edgeCases.map(async (edgeCase) => {
+            const result = await completeStructured({
+              system: EXPAND_TEST_CASE_SYSTEM_PROMPT,
+              user: buildExpandTestCaseUserPrompt({
+                agentName: agent.name,
+                agentPrompt: agent.prompt!,
+                goals: agent.goals,
+                edgeCase,
+              }),
+              schema: expandedTestCaseSchema,
+              maxOutputTokens: 12_000,
+            })
+            const data = result.data
+            return {
+              edgeCase,
+              scenario: data.scenario,
+              criteria: data.criteria,
+              transcripts: data.transcripts.map(normalizeTranscript),
+            }
+          }),
+        )
+
+        const saved = await db.transaction(async (tx) => {
+          await tx
+            .delete(testCases)
+            .where(
+              and(eq(testCases.agentId, agent.id), eq(testCases.locationId, request.session.locationId)),
+            )
+          if (expanded.length === 0) return []
+          return tx
+            .insert(testCases)
+            .values(
+              expanded.map((row) => ({
+                locationId: request.session.locationId,
+                agentId: agent.id,
+                edgeCase: row.edgeCase,
+                scenario: row.scenario,
+                criteria: row.criteria,
+                transcripts: row.transcripts,
+                results: null,
+              })),
+            )
+            .returning()
+        })
+
+        return { testCases: saved.map(serializeTestCase) }
+      } catch (error) {
+        if ((error as { code?: string }).code === 'LLM_DISABLED') {
+          return reply.code(503).send({ error: 'llm_disabled' })
+        }
+        throw error
+      }
+    },
+  )
+
+  app.post(
+    '/api/agents/:id/test-cases/run',
+    { schema: { params: idParam, body: z.object({}).default({}) } },
+    async (request, reply) => {
+    const agent = await db.query.agents.findFirst({
+      where: and(eq(agents.id, request.params.id), eq(agents.locationId, request.session.locationId)),
+    })
+    if (!agent) return reply.code(404).send({ error: 'agent not found' })
+
+    const rows = await db.query.testCases.findMany({
+      where: and(eq(testCases.agentId, agent.id), eq(testCases.locationId, request.session.locationId)),
+      orderBy: (t, { asc }) => [asc(t.createdAt)],
+    })
+    if (rows.length === 0) return reply.code(409).send({ error: 'no test cases to run' })
+
+    try {
+      const updated: TestCase[] = []
+      for (const row of rows) {
+        const judgeCriteria = toJudgeCriteria(row.criteria)
+        const results: TestCaseTranscriptResult[] = []
+        for (let transcriptIndex = 0; transcriptIndex < row.transcripts.length; transcriptIndex += 1) {
+          const transcript = row.transcripts[transcriptIndex]!
+          const judged = await judgeCall({
+            transcript,
+            criteria: judgeCriteria,
+            passThreshold: TEST_CASE_PASS_THRESHOLD,
+            partialThreshold: TEST_CASE_PARTIAL_THRESHOLD,
+            context: {
+              agentName: agent.name,
+              agentPrompt: agent.prompt ?? agent.promptSnapshot,
+              direction: 'inbound',
+              durationSec: 0,
+              outcome: 'completed',
+            },
+          })
+          const byKey = new Map(judged.output.criteria.map((c) => [c.key, c]))
+          results.push({
+            transcriptIndex,
+            criteria: row.criteria.map((c) => {
+              const hit = byKey.get(c.key)
+              return {
+                key: c.key,
+                met: hit?.met ?? false,
+                rationale: hit?.rationale ?? 'No judgement returned for this criterion.',
+              }
+            }),
+            feedback: improvementFeedback(judged),
+          })
+        }
+        const [saved] = await db
+          .update(testCases)
+          .set({
+            results,
+            lastRunAt: new Date(),
+          })
+          .where(eq(testCases.id, row.id))
+          .returning()
+        if (saved) updated.push(serializeTestCase(saved))
+      }
+      return { testCases: updated }
+    } catch (error) {
+      if ((error as { code?: string }).code === 'LLM_DISABLED') {
+        return reply.code(503).send({ error: 'llm_disabled' })
+      }
+      throw error
+    }
+  })
+
+  app.post(
+    '/api/agents/:id/test-cases/suggest-prompt',
+    { schema: { params: idParam, body: z.object({}).default({}) } },
+    async (request, reply) => {
+      const agent = await db.query.agents.findFirst({
+        where: and(eq(agents.id, request.params.id), eq(agents.locationId, request.session.locationId)),
+      })
+      if (!agent) return reply.code(404).send({ error: 'agent not found' })
+      if (!agent.prompt?.trim()) return reply.code(409).send({ error: 'agent has no prompt' })
+
+      const rows = await db.query.testCases.findMany({
+        where: and(eq(testCases.agentId, agent.id), eq(testCases.locationId, request.session.locationId)),
+        orderBy: (t, { asc }) => [asc(t.createdAt)],
+      })
+      if (rows.length === 0) return reply.code(409).send({ error: 'no test cases' })
+
+      const failures: Array<{
+        edgeCase: string
+        criterionLabel: string
+        criterionDescription: string
+        rationale: string
+        feedback: string | null
+      }> = []
+      for (const row of rows) {
+        if (!row.results?.length) continue
+        const byKey = new Map(row.criteria.map((c) => [c.key, c]))
+        for (const result of row.results) {
+          for (const scored of result.criteria) {
+            if (scored.met) continue
+            const meta = byKey.get(scored.key)
+            failures.push({
+              edgeCase: row.edgeCase,
+              criterionLabel: meta?.label ?? scored.key,
+              criterionDescription: meta?.description ?? '',
+              rationale: scored.rationale,
+              feedback: result.feedback,
+            })
+          }
+        }
+      }
+      if (failures.length === 0) {
+        return reply.code(409).send({ error: 'no failed criteria to improve' })
+      }
+
+      try {
+        const result = await completeStructured({
+          system: SUGGEST_TEST_PROMPT_SYSTEM,
+          user: buildSuggestTestPromptUser({
+            agentName: agent.name,
+            currentPrompt: agent.prompt,
+            failures: failures.slice(0, 40),
+          }),
+          schema: suggestedTestPromptSchema,
+          maxOutputTokens: 12_000,
+        })
+        return {
+          currentPrompt: agent.prompt,
+          revisedPrompt: result.data.revisedPrompt,
+          summary: result.data.summary,
+        }
+      } catch (error) {
+        if ((error as { code?: string }).code === 'LLM_DISABLED') {
+          return reply.code(503).send({ error: 'llm_disabled' })
+        }
+        throw error
+      }
+    },
+  )
+
+  app.patch(
+    '/api/agents/:id/prompt',
+    { schema: { params: idParam, body: agentPromptSchema } },
+    async (request, reply) => {
+      const [updated] = await db
+        .update(agents)
+        .set({ prompt: request.body.prompt })
+        .where(and(eq(agents.id, request.params.id), eq(agents.locationId, request.session.locationId)))
+        .returning({ id: agents.id, prompt: agents.prompt })
+      if (!updated) return reply.code(404).send({ error: 'agent not found' })
+      return updated
     },
   )
 }

@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Settings2 } from 'lucide-vue-next'
+import { FlaskConical, Settings2 } from 'lucide-vue-next'
 import { useAgentList, type AgentListItem } from '../composables/queries.js'
 import AgentSetupDialog from '../components/agent-settings/AgentSetupDialog.vue'
+import AgentTestingDialog from '../components/agent-settings/AgentTestingDialog.vue'
 import Card from '../components/ui/Card.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import LoadingBlock from '../components/ui/LoadingBlock.vue'
@@ -13,6 +14,7 @@ const router = useRouter()
 const { data: agentList, isLoading } = useAgentList()
 
 const selectedAgentId = ref('')
+const testingAgentId = ref('')
 const toast = ref('')
 let toastTimer: ReturnType<typeof setTimeout> | null = null
 onBeforeUnmount(() => {
@@ -21,6 +23,10 @@ onBeforeUnmount(() => {
 
 const selectedAgent = computed(() =>
   agentList.value?.agents.find((agent) => agent.id === selectedAgentId.value) ?? null,
+)
+
+const testingAgent = computed(() =>
+  agentList.value?.agents.find((agent) => agent.id === testingAgentId.value) ?? null,
 )
 
 watch(
@@ -35,13 +41,24 @@ watch(
 )
 
 function openSetup(agentId: string) {
+  testingAgentId.value = ''
   selectedAgentId.value = agentId
   void router.replace({ name: 'agent-settings', query: { agentId } })
+}
+
+function openTesting(agentId: string) {
+  selectedAgentId.value = ''
+  testingAgentId.value = agentId
+  void router.replace({ name: 'agent-settings' })
 }
 
 function closeSetup() {
   selectedAgentId.value = ''
   void router.replace({ name: 'agent-settings' })
+}
+
+function closeTesting() {
+  testingAgentId.value = ''
 }
 
 function showToast(message: string) {
@@ -52,6 +69,10 @@ function showToast(message: string) {
 
 function handleSaved(message: string) {
   closeSetup()
+  showToast(message)
+}
+
+function handleTestingDone(message: string) {
   showToast(message)
 }
 
@@ -109,6 +130,13 @@ function statusLabel(agent: AgentListItem) {
                     <Settings2 class="size-3.5" aria-hidden="true" />
                     {{ agent.configured ? 'Edit criteria' : 'Add criteria' }}
                   </button>
+                  <button
+                    class="inline-flex items-center gap-1.5 rounded-md border border-hairline bg-surface px-3 py-1.5 font-medium hover:bg-plane"
+                    @click="openTesting(agent.id)"
+                  >
+                    <FlaskConical class="size-3.5" aria-hidden="true" />
+                    Generate tests
+                  </button>
                 </div>
               </td>
             </tr>
@@ -122,6 +150,13 @@ function statusLabel(agent: AgentListItem) {
       :agent="selectedAgent"
       @close="closeSetup"
       @saved="handleSaved"
+    />
+
+    <AgentTestingDialog
+      v-if="testingAgent"
+      :agent="testingAgent"
+      @close="closeTesting"
+      @done="handleTestingDone"
     />
 
     <Teleport to="body">

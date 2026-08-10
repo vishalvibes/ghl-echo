@@ -1,0 +1,1 @@
+ALTER TABLE "test_cases" DROP COLUMN "overall_score";
